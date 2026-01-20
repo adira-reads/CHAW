@@ -728,6 +728,7 @@ function saveConfiguration(wizardData) {
     logMessage(functionName, 'Validation passed, creating configuration sheets...');
     
     createConfigurationSheet(ss, wizardData);
+    clearBrandingCache();  // Force reload of branding colors for subsequent sheets
     createStudentRosterSheet(ss, wizardData);
     createTeacherRosterSheet(ss, wizardData);
     createGroupConfigSheet(ss, wizardData);

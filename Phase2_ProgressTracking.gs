@@ -90,6 +90,14 @@ const LAYOUT = {
 let _brandingCache = null;
 
 /**
+ * Clears the branding cache to force reload from config sheet
+ * Call this after saving branding settings in the wizard
+ */
+function clearBrandingCache() {
+  _brandingCache = null;
+}
+
+/**
  * Loads school branding from Site Configuration sheet
  * Falls back to defaults if not configured
  * @returns {Object} Branding settings
@@ -172,10 +180,11 @@ const COLORS = {
   Y: "#d4edda",        // Light green - Yes/Pass
   N: "#f8d7da",        // Light red - No/Fail
   A: "#fff3cd",        // Light yellow - Absent
-  HEADER_BG: SCHOOL_BRANDING.HEADER_BG,
-  HEADER_FG: SCHOOL_BRANDING.HEADER_FG,
-  TITLE_BG: SCHOOL_BRANDING.TITLE_BG,
-  TITLE_FG: SCHOOL_BRANDING.TITLE_FG,
+  // Use getters to ensure branding colors are loaded dynamically
+  get HEADER_BG() { return SCHOOL_BRANDING.HEADER_BG; },
+  get HEADER_FG() { return SCHOOL_BRANDING.HEADER_FG; },
+  get TITLE_BG() { return SCHOOL_BRANDING.TITLE_BG; },
+  get TITLE_FG() { return SCHOOL_BRANDING.TITLE_FG; },
   SUB_HEADER_BG: "#f8f9fa",
   PLACEHOLDER_FG: "#999999"
 };
