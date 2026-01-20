@@ -12,22 +12,28 @@
  * - Group sheet names: "KG Groups", "G1 Groups", ..., "G8 Groups"
  */
 function highlightAndCreateExceptionReport() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
 
-  const initialSheetName = "Initial Assessment";
-  const groupSheetNames = [
-    "KG Groups", "G1 Groups", "G2 Groups", "G3 Groups",
-    "G4 Groups", "G5 Groups", "G6 Groups", "G7 Groups", "G8 Groups"
-  ];
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  const INITIAL_START_ROW = 6; // Initial Assessment data begins on row 6
-  const NAME_COL = 1;          // Column A
-  const GRADE_COL = 2;         // Column B (Initial Assessment grade)
-  const missingColor = "#fff2cc";
-  const reportSheetName = "Exception Report";
+    const initialSheetName = "Initial Assessment";
+    const groupSheetNames = [
+      "KG Groups", "G1 Groups", "G2 Groups", "G3 Groups",
+      "G4 Groups", "G5 Groups", "G6 Groups", "G7 Groups", "G8 Groups"
+    ];
 
-  const initialSheet = ss.getSheetByName(initialSheetName);
-  if (!initialSheet) throw new Error(`Sheet not found: "${initialSheetName}"`);
+    const INITIAL_START_ROW = 6; // Initial Assessment data begins on row 6
+    const NAME_COL = 1;          // Column A
+    const GRADE_COL = 2;         // Column B (Initial Assessment grade)
+    const missingColor = "#fff2cc";
+    const reportSheetName = "Exception Report";
+
+    const initialSheet = ss.getSheetByName(initialSheetName);
+    if (!initialSheet) {
+      ui.alert('Error', `Sheet not found: "${initialSheetName}". Please run the Setup Wizard first.`, ui.ButtonSet.OK);
+      return;
+    }
 
   // --- Build Initial Assessment map: normalizedName -> {displayName, grade} ---
   const initialLastRow = initialSheet.getLastRow();
@@ -150,6 +156,11 @@ function highlightAndCreateExceptionReport() {
   }
 
   reportSheet.autoResizeColumns(1, 4);
+
+  } catch (error) {
+    Logger.log('highlightAndCreateExceptionReport Error: ' + error.toString());
+    ui.alert('Error', 'An error occurred while generating the exception report:\n\n' + error.message, ui.ButtonSet.OK);
+  }
 }
 
 /** Skip sub-headers / non-name rows on Group sheets (Column A). */

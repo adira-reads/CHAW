@@ -437,41 +437,9 @@ function createUnenrolledLogSheet_(ss) {
 // SAVE FUNCTION - MASTER ROUTER
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * MASTER SAVE FUNCTION - Routes to appropriate tracking system
- * 
- * @param {Object} formObject - {groupName, lessonName, teacherName, studentStatuses, unenrolledStudents, gradeSheet}
- * @returns {Object} - {success: boolean, message: string}
- */
-function saveLessonData(formObject) {
-  const { groupName, lessonName, teacherName, studentStatuses } = formObject;
-  const grade = groupName.split(' ')[0];
-  
-  try {
-    // ═══════════════════════════════════════════════════════════════
-    // ROUTE 1: PRE-K (Direct to Pre-K Data matrix)
-    // ═══════════════════════════════════════════════════════════════
-    if (grade === "PreK") {
-      return savePreKData(formObject);
-    }
-    
-    // ═══════════════════════════════════════════════════════════════
-    // ROUTE 2: TUTORING GROUPS (To Tutoring Progress Log)
-    // ═══════════════════════════════════════════════════════════════
-    if (isTutoringGroup(groupName)) {
-      return saveTutoringData(formObject);
-    }
-    
-    // ═══════════════════════════════════════════════════════════════
-    // ROUTE 3: STANDARD UFLI (To Small Group Progress → UFLI MAP)
-    // ═══════════════════════════════════════════════════════════════
-    return saveStandardUFLIData(formObject);
-    
-  } catch (error) {
-    Logger.log("saveLessonData Error: " + error.toString());
-    return { success: false, message: error.toString() };
-  }
-}
+// NOTE: The main saveLessonData() function is now in Setupwizard.gs
+// It routes to saveTutoringData() below for tutoring groups.
+// The duplicate here has been removed to avoid conflicts.
 
 /**
  * Saves Pre-K data directly to the Pre-K Data matrix
@@ -606,56 +574,16 @@ function saveTutoringData(formObject) {
 }
 
 /**
- * Saves standard UFLI data to Small Group Progress and syncs
- * @param {Object} formObject
- * @returns {Object}
+ * @deprecated This function is no longer used.
+ * Standard UFLI saves now go through saveLessonData() in Setupwizard.gs
+ * which uses the optimized deferred sync queue.
+ * Kept for reference only - do not call directly.
  */
-function saveStandardUFLIData(formObject) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const { groupName, lessonName, teacherName, studentStatuses } = formObject;
-  const grade = groupName.split(' ')[0];
-  
-  const progressSheet = ss.getSheetByName(SHEET_NAMES_V2.SMALL_GROUP_PROGRESS);
-  if (!progressSheet) throw new Error("Small Group Progress sheet not found.");
-  
-  const timestamp = new Date();
-  
-  const newRows = studentStatuses.map(s => [
-    timestamp,
-    teacherName,
-    groupName,
-    s.name,
-    lessonName,
-    s.status
-  ]);
-  
-  if (newRows.length > 0) {
-    const startRow = progressSheet.getLastRow() + 1;
-    progressSheet.getRange(startRow, 1, newRows.length, 6).setValues(newRows);
-  }
-  
-  // Sync to update UFLI MAP and group sheets
-  syncSmallGroupProgress();
-  
-  // ═══════════════════════════════════════════════════════════
-  // Log unenrolled students (Standard UFLI)
-  // ═══════════════════════════════════════════════════════════
-  if (formObject.unenrolledStudents && formObject.unenrolledStudents.length > 0) {
-    formObject.unenrolledStudents.forEach(function(studentName) {
-      logUnenrolledStudent({
-        studentName: studentName,
-        groupName: groupName,
-        gradeSheet: formObject.gradeSheet || grade + ' Groups',
-        teacherName: teacherName,
-        lessonName: lessonName
-      });
-    });
-  }
-  
-  return { 
-    success: true, 
-    message: `UFLI lesson data saved and synced! ${newRows.length} student(s) recorded.`
-  };
+function saveStandardUFLIData_DEPRECATED(formObject) {
+  // This function used the slow syncSmallGroupProgress() approach.
+  // The new approach in Setupwizard.gs uses addToSyncQueue() for deferred processing.
+  Logger.log("WARNING: saveStandardUFLIData_DEPRECATED was called - this should not happen");
+  return { success: false, message: "This function is deprecated. Use saveLessonData() in Setupwizard.gs" };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

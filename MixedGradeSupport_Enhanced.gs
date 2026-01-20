@@ -1150,17 +1150,6 @@ function createMixedGradeSheet(ss, sheetName, groupNames, allStudents) {
 // UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function naturalSort(a, b) {
-  const numA = parseInt((a.match(/^(\d+)/) || [])[1]) || 0;
-  const numB = parseInt((b.match(/^(\d+)/) || [])[1]) || 0;
-  
-  if (numA !== numB) {
-    return numA - numB;
-  }
-  
-  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-}
-
 /**
  * Test function to verify configuration
  */

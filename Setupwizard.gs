@@ -1637,6 +1637,13 @@ function saveLessonData(formData) {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // TUTORING GROUPS - Route to TutoringSystem.gs handler
+    // ═══════════════════════════════════════════════════════════
+    if (isTutoringGroup(groupName)) {
+      return saveTutoringData(formData);
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // K-8 FAST SAVE LOGIC (Optimized)
     // ═══════════════════════════════════════════════════════════
     else {
@@ -1696,28 +1703,19 @@ function saveLessonData(formData) {
   }
 }
 // ═══════════════════════════════════════════════════════════════════════════
-// HELPER: Update Group Sheet (Targeted - BATCH WRITE - Change 1A)
+// HELPER: Update Group Sheet (Targeted Batch Write)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Updates only the specific group's cells in the Group Sheet
- * Uses single batch setValues() for performance
- */
-/**
- * OPTIMIZED: Updates only the specific group's cells in the Group Sheet
- * Uses TextFinder and Batch Writes for speed.
- */
-/**
- * OPTIMIZED: Updates only the specific group's cells in the Group Sheet
- * Uses Batch Read/Write to minimize API calls.
- */
-/**
- * ROBUST: Updates only the specific group's cells in the Group Sheet.
- * Reads Column A into memory to reliably find the group, then batch updates.
- */
-/**
- * ROBUST & UNIVERSAL: Updates the specific group's cells in the Group Sheet.
+ * Updates only the specific group's cells in the Group Sheet.
  * Works for both Standard (Col A) and Sankofa (Col D) layouts.
+ * Uses TextFinder and batch writes to minimize API calls.
+ *
+ * @param {Spreadsheet} ss - The active spreadsheet
+ * @param {string} gradeSheetName - Name of the grade sheet (e.g., "KG Groups")
+ * @param {string} groupName - The group name to find
+ * @param {string} lessonName - The lesson column to update
+ * @param {Array} studentStatuses - Array of {name, status} objects
  */
 function updateGroupSheetTargeted(ss, gradeSheetName, groupName, lessonName, studentStatuses) {
   const sheet = ss.getSheetByName(gradeSheetName);
@@ -1846,68 +1844,6 @@ function updateUFLIMapTargeted(mapSheet, studentStatuses, lessonNum, timestamp) 
   
   for (let i = 0; i < nameData.length; i++) {
     const name = nameData[i] ? nameData[i].toString().trim().toUpperCase() : "";
-    if (statusMap.has(name)) {
-      const status = statusMap.get(name);
-      
-      // Update Status
-      lessonValues[i][0] = status;
-      
-      // Update Current Lesson text
-      currentLessonValues[i][0] = lessonLabel;
-      
-      updatesMade++;
-    }
-  }
-  
-  // 5. Batch Write
-  if (updatesMade > 0) {
-    lessonRange.setValues(lessonValues);
-    currentLessonRange.setValues(currentLessonValues);
-    Logger.log(`Fast updated UFLI MAP for ${updatesMade} students`);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPER: Update UFLI MAP (Targeted - BATCH WRITE - Change 1B)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Updates only the affected students in UFLI MAP
- * Uses single batch setValues() for performance
- */
-/**
- * OPTIMIZED: Updates only the affected students in UFLI MAP
- * Uses Batch Read/Write to minimize API calls (2 writes total).
- */
-function updateUFLIMapTargeted(mapSheet, studentStatuses, lessonNum, timestamp) {
-  const lastRow = mapSheet.getLastRow();
-  if (lastRow < LAYOUT.DATA_START_ROW) return;
-  
-  const numRows = lastRow - LAYOUT.DATA_START_ROW + 1;
-  
-  // 1. Read Student Names (Column A)
-  const nameData = mapSheet.getRange(LAYOUT.DATA_START_ROW, 1, numRows, 1).getValues().flat();
-  
-  // 2. Identify target column indices
-  const lessonColIdx = LAYOUT.COL_FIRST_LESSON + lessonNum - 1; // 1-based column index
-  const currentLessonColIdx = LAYOUT.COL_CURRENT_LESSON;        // 1-based column index
-  
-  // 3. Read the Data Columns (Lesson Column and Current Lesson Column)
-  const lessonRange = mapSheet.getRange(LAYOUT.DATA_START_ROW, lessonColIdx, numRows, 1);
-  const currentLessonRange = mapSheet.getRange(LAYOUT.DATA_START_ROW, currentLessonColIdx, numRows, 1);
-  
-  const lessonValues = lessonRange.getValues();
-  const currentLessonValues = currentLessonRange.getValues();
-  
-  // 4. Build Lookup and Update Arrays
-  const statusMap = new Map();
-  studentStatuses.forEach(s => statusMap.set(s.name.toString().trim().toUpperCase(), s.status));
-  
-  let updatesMade = 0;
-  const lessonLabel = `UFLI L${lessonNum}`;
-  
-  for (let i = 0; i < nameData.length; i++) {
-    const name = nameData[i].toString().trim().toUpperCase();
     if (statusMap.has(name)) {
       const status = statusMap.get(name);
       
