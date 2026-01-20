@@ -7,14 +7,14 @@
 //
 // PURPOSE:
 // - Queue UFLI MAP updates instead of running them synchronously
-// - Process queue every 60 minutes via time-based trigger
+// - Process queue every 30 minutes via time-based trigger
 // - Batch updates for efficiency
 // - Reduce teacher wait time from ~16s to ~3-4s
 //
 // ARCHITECTURE:
 // 1. Teacher submits → Small Group Progress + Group Sheet (immediate)
 // 2. UFLI MAP update → added to Sync Queue (instant)
-// 3. Every 60 min → processSyncQueue() batch updates UFLI MAP
+// 3. Every 30 min → processSyncQueue() batch updates UFLI MAP
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -23,7 +23,7 @@
 
 const SYNC_QUEUE_CONFIG = {
   SHEET_NAME: "Sync Queue",
-  TRIGGER_INTERVAL_MINUTES: 60,
+  TRIGGER_INTERVAL_MINUTES: 30,
   TRIGGER_FUNCTION: "processSyncQueue",
   COLUMNS: {
     TIMESTAMP: 1,
@@ -106,13 +106,13 @@ function getOrCreateSyncQueueSheet(ss) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// QUEUE PROCESSOR (Runs every 60 minutes)
+// QUEUE PROCESSOR (Runs every 30 minutes)
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Processes all pending entries in the Sync Queue
  * Updates UFLI MAP in batches for efficiency
- * Called by time-based trigger every 60 minutes
+ * Called by time-based trigger every 30 minutes
  */
 function processSyncQueue() {
   const functionName = "processSyncQueue";
@@ -361,7 +361,7 @@ function cleanupOldQueueEntries(queueSheet) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Sets up the 60-minute trigger for queue processing
+ * Sets up the 30-minute trigger for queue processing
  * Call this once from the menu or manually
  */
 function setupSyncQueueTrigger() {
@@ -423,7 +423,7 @@ function getSyncQueueTriggerStatus() {
       return {
         isActive: true,
         interval: SYNC_QUEUE_CONFIG.TRIGGER_INTERVAL_MINUTES,
-        nextRun: "Within the next hour"
+        nextRun: "Within the next 30 minutes"
       };
     }
   }

@@ -2077,7 +2077,7 @@ SYNC STATUS
 ═══════════════════════════════════
 
 HOURLY UFLI MAP SYNC (Fast Save)
-${hourlyTrigger ? '✅ ENABLED - Every 60 minutes' : '❌ DISABLED'}
+${hourlyTrigger ? '✅ ENABLED - Every 30 minutes' : '❌ DISABLED'}
 Pending updates in queue: ${pendingCount}
 
 NIGHTLY FULL SYNC (Stats & Summaries)

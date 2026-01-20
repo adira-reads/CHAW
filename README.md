@@ -340,7 +340,7 @@ Teacher Submits Lesson Check (~3-4 seconds total)
 **Why this matters:**
 - Previous save time: ~16 seconds (teachers waiting)
 - New save time: ~3-4 seconds (teachers happy)
-- UFLI MAP updates within 60 minutes automatically
+- UFLI MAP updates within 30 minutes automatically
 
 **Sync Queue Sheet Columns:**
 | Column | Content |
