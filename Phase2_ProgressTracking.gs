@@ -160,6 +160,117 @@ const SKILL_SECTIONS = {
 
 const REVIEW_LESSONS = [35,36,37,39,40,41,49,53,57,59,62,71,76,79,83,88,92,97,102,104,105,106,128];
 
+// Set version for O(1) lookups (used by helpers below)
+const REVIEW_LESSONS_SET = new Set(REVIEW_LESSONS);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PERFORMANCE THRESHOLDS & STATUS LABELS (Centralized for easy replication)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PERFORMANCE_THRESHOLDS = {
+  ON_TRACK: 80,       // >= 80% = On Track
+  NEEDS_SUPPORT: 50   // >= 50% = Needs Support, < 50% = Intervention
+};
+
+const STATUS_LABELS = {
+  ON_TRACK: "On Track",
+  NEEDS_SUPPORT: "Needs Support",
+  INTERVENTION: "Intervention"
+};
+
+/**
+ * Returns the performance status label based on percentage
+ * @param {number} percentage - The score percentage (0-100)
+ * @returns {string} Status label
+ */
+function getPerformanceStatus(percentage) {
+  if (percentage >= PERFORMANCE_THRESHOLDS.ON_TRACK) return STATUS_LABELS.ON_TRACK;
+  if (percentage >= PERFORMANCE_THRESHOLDS.NEEDS_SUPPORT) return STATUS_LABELS.NEEDS_SUPPORT;
+  return STATUS_LABELS.INTERVENTION;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CALCULATION HELPER UTILITIES (Reduce code duplication)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Gets the column index for a lesson number
+ * @param {number} lessonNum - Lesson number (1-128)
+ * @returns {number} Array index (0-based)
+ */
+function getLessonColumnIndex(lessonNum) {
+  return LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
+}
+
+/**
+ * Gets normalized lesson status from a data row
+ * @param {Array} row - Student row data
+ * @param {number} lessonNum - Lesson number (1-128)
+ * @returns {string} Uppercase status ('Y', 'N', 'A', or '')
+ */
+function getLessonStatus(row, lessonNum) {
+  const idx = getLessonColumnIndex(lessonNum);
+  if (idx >= row.length) return '';
+  return (row[idx] ? row[idx].toString() : '').toUpperCase().trim();
+}
+
+/**
+ * Checks if a lesson is a review lesson (O(1) lookup)
+ * @param {number} lessonNum - Lesson number
+ * @returns {boolean}
+ */
+function isReviewLesson(lessonNum) {
+  return REVIEW_LESSONS_SET.has(lessonNum);
+}
+
+/**
+ * Partitions lessons into review and non-review arrays (single pass)
+ * @param {Array<number>} lessons - Array of lesson numbers
+ * @returns {{reviews: Array<number>, nonReviews: Array<number>}}
+ */
+function partitionLessonsByReview(lessons) {
+  const reviews = [];
+  const nonReviews = [];
+  for (const lesson of lessons) {
+    if (REVIEW_LESSONS_SET.has(lesson)) {
+      reviews.push(lesson);
+    } else {
+      nonReviews.push(lesson);
+    }
+  }
+  return { reviews, nonReviews };
+}
+
+/**
+ * Checks gateway status for a set of review lessons
+ * Gateway passes if: at least one review is assigned (Y or N) AND all assigned reviews passed (Y)
+ *
+ * @param {Array} row - Student row data
+ * @param {Array<number>} reviewLessons - Review lesson numbers to check
+ * @returns {{assigned: boolean, allPassed: boolean, gatewayPassed: boolean}}
+ */
+function checkGateway(row, reviewLessons) {
+  let assigned = false;
+  let allPassed = true;
+
+  for (const lessonNum of reviewLessons) {
+    const status = getLessonStatus(row, lessonNum);
+    if (status === 'Y') {
+      assigned = true;
+    } else if (status === 'N') {
+      assigned = true;
+      allPassed = false;
+    }
+    // Blank = not assigned, ignore for gateway check
+  }
+
+  return {
+    assigned,
+    allPassed,
+    gatewayPassed: assigned && allPassed
+  };
+}
+
 const FOUNDATIONAL_LESSONS = Array.from({length: 34}, (_, i) => i + 1);
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -377,41 +488,39 @@ function setColumnHeaders(sheet, row, headers) {
 /**
  * Calculates percentage of lessons passed ('Y') out of attempted ('Y' or 'N')
  * FIXED: Removed 'A' (Absent) from the denominator so absence doesn't lower the score.
+ *
+ * @param {Array} mapRow - Student's row data
+ * @param {Array<number>} lessonIndices - Lesson numbers to check
+ * @returns {number|string} Percentage integer or "" if nothing attempted
  */
 function calculatePercentage(mapRow, lessonIndices) {
   let passed = 0;
   let attempted = 0;
-  
-  lessonIndices.forEach(lessonNum => {
-    // Convert Lesson # to Array Index
-    const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-    
-    if (idx < mapRow.length) {
-      const status = mapRow[idx] ? mapRow[idx].toString().toUpperCase().trim() : "";
-      
-      if (status === 'Y') {
-        passed++;
-        attempted++;
-      } else if (status === 'N') {
-        attempted++; // Only count attempts if they were present to take it
-      }
-      // Ignored: 'A' (Absent) or "" (Blank)
+
+  for (const lessonNum of lessonIndices) {
+    const status = getLessonStatus(mapRow, lessonNum);
+    if (status === 'Y') {
+      passed++;
+      attempted++;
+    } else if (status === 'N') {
+      attempted++;
     }
-  });
-  
+    // Ignored: 'A' (Absent) or "" (Blank)
+  }
+
   return attempted > 0 ? Math.round((passed / attempted) * 100) : "";
 }
 
 /**
  * Calculates benchmark percentage with SECTION-BASED gateway logic
- * 
+ *
  * For each skill section that overlaps with the benchmark range:
  * 1. If section's review(s) are ASSIGNED (Y or N) AND all passed → full section credit
  * 2. Otherwise → count actual Y's in non-review lessons
- * 
+ *
  * Blanks are NEVER counted as N (not assigned = ignored for gateway)
  * Denominator: Total non-review lessons in benchmark (consistent for growth calc)
- * 
+ *
  * @param {Array} mapRow - Student's row data from UFLI Map
  * @param {Array<number>} lessonIndices - Lessons in benchmark
  * @param {number} denominator - Original fixed denominator (kept for compatibility)
@@ -419,62 +528,53 @@ function calculatePercentage(mapRow, lessonIndices) {
  */
 function calculateBenchmark(mapRow, lessonIndices, denominator) {
   if (!lessonIndices || lessonIndices.length === 0) return 0;
-  
+
   // Get non-review lessons in benchmark (this is our denominator)
-  const nonReviewsInBenchmark = lessonIndices.filter(l => !REVIEW_LESSONS.includes(l));
+  const { nonReviews: nonReviewsInBenchmark } = partitionLessonsByReview(lessonIndices);
   if (nonReviewsInBenchmark.length === 0) return 0;
-  
+
+  // Pre-compute benchmark set for O(1) lookups
+  const benchmarkSet = new Set(lessonIndices);
   let totalPassed = 0;
-  
+
   // Process each skill section
-  Object.entries(SKILL_SECTIONS).forEach(([sectionName, sectionLessons]) => {
-    // Get section lessons that are in the benchmark range
-    const sectionInBenchmark = sectionLessons.filter(l => lessonIndices.includes(l));
-    if (sectionInBenchmark.length === 0) return;
-    
-    const sectionReviews = sectionInBenchmark.filter(l => REVIEW_LESSONS.includes(l));
-    const sectionNonReviews = sectionInBenchmark.filter(l => !REVIEW_LESSONS.includes(l));
-    
-    // Check gateway for this section
-    let gatewayTriggered = false;
-    if (sectionReviews.length > 0) {
-      let reviewsAssigned = false;
-      let allAssignedPassed = true;
-      
-      for (const lessonNum of sectionReviews) {
-        const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-        if (idx < mapRow.length) {
-          const status = mapRow[idx] ? mapRow[idx].toString().toUpperCase().trim() : "";
-          if (status === 'Y') {
-            reviewsAssigned = true;
-          } else if (status === 'N') {
-            reviewsAssigned = true;
-            allAssignedPassed = false;
-          }
-          // Blank = not assigned, ignore for gateway check
+  for (const [sectionName, sectionLessons] of Object.entries(SKILL_SECTIONS)) {
+    // Get section lessons that are in the benchmark range (single pass)
+    const sectionInBenchmark = [];
+    const sectionReviews = [];
+    const sectionNonReviews = [];
+
+    for (const lesson of sectionLessons) {
+      if (benchmarkSet.has(lesson)) {
+        sectionInBenchmark.push(lesson);
+        if (isReviewLesson(lesson)) {
+          sectionReviews.push(lesson);
+        } else {
+          sectionNonReviews.push(lesson);
         }
       }
-      
-      if (reviewsAssigned && allAssignedPassed) {
-        gatewayTriggered = true;
-      }
     }
-    
-    if (gatewayTriggered) {
-      // Gateway: Count ALL non-reviews in this section as passed
+
+    if (sectionInBenchmark.length === 0) continue;
+
+    // Check gateway using helper
+    const gateway = sectionReviews.length > 0
+      ? checkGateway(mapRow, sectionReviews)
+      : { gatewayPassed: false };
+
+    if (gateway.gatewayPassed) {
+      // Gateway passed: Count ALL non-reviews in this section as passed
       totalPassed += sectionNonReviews.length;
     } else {
       // No gateway: Count actual Y's in non-review lessons
       for (const lessonNum of sectionNonReviews) {
-        const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-        if (idx < mapRow.length) {
-          const status = mapRow[idx] ? mapRow[idx].toString().toUpperCase().trim() : "";
-          if (status === 'Y') totalPassed++;
+        if (getLessonStatus(mapRow, lessonNum) === 'Y') {
+          totalPassed++;
         }
       }
     }
-  });
-  
+  }
+
   return Math.round((totalPassed / nonReviewsInBenchmark.length) * 100);
 }
 
@@ -494,60 +594,36 @@ function calculateBenchmark(mapRow, lessonIndices, denominator) {
  * @returns {number|string} Percentage integer or "" if nothing attempted
  */
 function calculateSectionPercentage(mapRow, sectionLessons, isInitialAssessment = false) {
-  const reviewLessonsInSection = sectionLessons.filter(l => REVIEW_LESSONS.includes(l));
-  const nonReviewLessonsInSection = sectionLessons.filter(l => !REVIEW_LESSONS.includes(l));
+  const { reviews, nonReviews } = partitionLessonsByReview(sectionLessons);
 
-  if (nonReviewLessonsInSection.length === 0) return "";
+  if (nonReviews.length === 0) return "";
+
+  // Count passed non-review lessons (used in both paths)
+  const countPassed = () => {
+    let passed = 0;
+    for (const lessonNum of nonReviews) {
+      if (getLessonStatus(mapRow, lessonNum) === 'Y') passed++;
+    }
+    return passed;
+  };
 
   // For Initial Assessment: Only count non-review Y's (no gateway)
   if (isInitialAssessment) {
-    let passed = 0;
-    for (const lessonNum of nonReviewLessonsInSection) {
-      const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-      if (idx < mapRow.length) {
-        const status = mapRow[idx] ? mapRow[idx].toString().toUpperCase().trim() : "";
-        if (status === 'Y') passed++;
-      }
-    }
-    return Math.round((passed / nonReviewLessonsInSection.length) * 100);
+    return Math.round((countPassed() / nonReviews.length) * 100);
   }
 
   // === ONGOING PROGRESS LOGIC ===
 
-  // Check gateway: Are any reviews ASSIGNED (Y or N)?
-  let reviewsAssigned = false;
-  let allAssignedPassed = true;
-
-  for (const lessonNum of reviewLessonsInSection) {
-    const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-    if (idx < mapRow.length) {
-      const status = mapRow[idx] ? mapRow[idx].toString().toUpperCase().trim() : "";
-      if (status === 'Y') {
-        reviewsAssigned = true;
-      } else if (status === 'N') {
-        reviewsAssigned = true;
-        allAssignedPassed = false;
-      }
-      // Blank = not assigned, ignore
+  // Check gateway using helper
+  if (reviews.length > 0) {
+    const gateway = checkGateway(mapRow, reviews);
+    if (gateway.gatewayPassed) {
+      return 100; // Gateway passed: 100% section credit
     }
-  }
-
-  // Gateway: If reviews assigned AND all passed → 100%
-  if (reviewsAssigned && allAssignedPassed) {
-    return 100;
   }
 
   // No gateway - count Y's in non-review lessons
-  let passed = 0;
-  for (const lessonNum of nonReviewLessonsInSection) {
-    const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-    if (idx < mapRow.length) {
-      const status = mapRow[idx] ? mapRow[idx].toString().toUpperCase().trim() : "";
-      if (status === 'Y') passed++;
-    }
-  }
-
-  return Math.round((passed / nonReviewLessonsInSection.length) * 100);
+  return Math.round((countPassed() / nonReviews.length) * 100);
 }
 
 /**
@@ -1697,9 +1773,7 @@ function updateAllStats(ss, mapData) {
       summaryRow.push(fullPct);
       
       // Benchmark Status based on Min Grade Skills % (v5.2 fix)
-      let status = "Intervention";
-      if (minPct >= 80) status = "On Track";
-      else if (minPct >= 50) status = "Needs Support";
+      const status = getPerformanceStatus(minPct);
       summaryRow.push(status);
     } else {
       summaryRow.push("", "", "", "");
@@ -1754,9 +1828,7 @@ function updateAllStats(ss, mapData) {
       summaryRow.push(scores.fullGrade);     // (Name + Sound + Form) / 78
       
       // Status Logic for PreK (based on Full Grade Skills - K-Readiness)
-      let status = "Intervention";
-      if (scores.fullGrade >= 80) status = "On Track";
-      else if (scores.fullGrade >= 50) status = "Needs Support";
+      const status = getPerformanceStatus(scores.fullGrade);
       summaryRow.push(status);
 
       // Fill remaining detailed columns with blanks (PreK doesn't use UFLI skill sections)
@@ -2311,38 +2383,34 @@ function calculateGrowthMetrics(students, initialData, grade) {
   };
 }
 /**
- * Calculate benchmark from Initial Assessment row
- * NO gateway logic for Initial - reviews aren't assessed initially
- * Just counts Y's in non-review lessons
- * 
- * @param {Array} row - Student's row from Initial Assessment
- * @param {Array<number>} lessonIndices - Lessons in benchmark
- * @param {number} denominator - Original fixed denominator (kept for compatibility)
+ * Simplified benchmark calculation (no gateway logic)
+ * Used for Initial Assessment and quick estimates where gateway logic isn't needed.
+ * Simply counts Y's in non-review lessons.
+ *
+ * @param {Array} row - Student's row data
+ * @param {Array<number>} lessonIndices - Lesson numbers to check
+ * @param {number} denominator - (unused, kept for API compatibility)
  * @returns {number} Percentage integer (0-100)
  */
 function calculateBenchmarkFromRow(row, lessonIndices, denominator) {
   if (!row || !lessonIndices || lessonIndices.length === 0) return 0;
-  
-  const nonReviewsInBenchmark = lessonIndices.filter(l => !REVIEW_LESSONS.includes(l));
-  if (nonReviewsInBenchmark.length === 0) return 0;
-  
+
+  const { nonReviews } = partitionLessonsByReview(lessonIndices);
+  if (nonReviews.length === 0) return 0;
+
   let passed = 0;
-  for (const lessonNum of nonReviewsInBenchmark) {
-    const idx = LAYOUT.LESSON_COLUMN_OFFSET + lessonNum - 1;
-    if (idx < row.length) {
-      const status = row[idx] ? row[idx].toString().toUpperCase().trim() : "";
-      if (status === 'Y') passed++;
-    }
+  for (const lessonNum of nonReviews) {
+    if (getLessonStatus(row, lessonNum) === 'Y') passed++;
   }
-  
-  return Math.round((passed / nonReviewsInBenchmark.length) * 100);
+
+  return Math.round((passed / nonReviews.length) * 100);
 }
 function calculateDistributionBands(students) {
   const bands = { onTrack: 0, progressing: 0, atRisk: 0 };
   students.forEach(s => {
     const score = parseFloat(s[5]) || 0;  // s[5] = Min Grade Skills % (v5.2 fix)
-    if (score >= 80) bands.onTrack++;
-    else if (score >= 50) bands.progressing++;
+    if (score >= PERFORMANCE_THRESHOLDS.ON_TRACK) bands.onTrack++;
+    else if (score >= PERFORMANCE_THRESHOLDS.NEEDS_SUPPORT) bands.progressing++;
     else bands.atRisk++;
   });
   return bands;
