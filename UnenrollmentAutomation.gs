@@ -289,20 +289,17 @@ function createArchiveSheet_(ss) {
     sheet.clear();
   }
   
-  // Title row
-  sheet.getRange(1, 1, 1, 20).merge()
-    .setValue('STUDENT ARCHIVE')
-    .setBackground('#98D4BB')
-    .setFontColor('#ffffff')
+  // Title row (no merge)
+  sheet.getRange(1, 1).setValue('STUDENT ARCHIVE');
+  sheet.getRange(1, 1, 1, 20).setBackground('#98D4BB');
+  sheet.getRange(1, 1).setFontColor('#ffffff')
     .setFontWeight('bold')
     .setFontSize(14)
-    .setFontFamily('Calibri')
-    .setHorizontalAlignment('center');
-  
-  // Subtitle
-  sheet.getRange(2, 1, 1, 20).merge()
-    .setValue('Complete data preservation for unenrolled students (3 rows per student: Initial Assessment, UFLI Map, Grade Summary)')
-    .setFontFamily('Calibri')
+    .setFontFamily('Calibri');
+
+  // Subtitle (no merge)
+  sheet.getRange(2, 1).setValue('Complete data preservation for unenrolled students (3 rows per student: Initial Assessment, UFLI Map, Grade Summary)');
+  sheet.getRange(2, 1).setFontFamily('Calibri')
     .setFontSize(10)
     .setFontStyle('italic')
     .setFontColor('#666666');
@@ -554,10 +551,10 @@ function writeArchiveHeaders() {
   
   let refRow = archiveSheet.getLastRow() + 3;
   
-  archiveSheet.getRange(refRow, 1, 1, 10).merge()
-    .setValue('═══ COLUMN REFERENCE (Original Sheet Headers) ═══')
-    .setFontWeight('bold')
-    .setBackground('#e0e0e0');
+  // Section header (no merge)
+  archiveSheet.getRange(refRow, 1).setValue('═══ COLUMN REFERENCE (Original Sheet Headers) ═══');
+  archiveSheet.getRange(refRow, 1, 1, 10).setBackground('#e0e0e0');
+  archiveSheet.getRange(refRow, 1).setFontWeight('bold').setFontFamily('Calibri');
   refRow++;
   
   sources.forEach(source => {

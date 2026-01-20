@@ -82,14 +82,54 @@ const LAYOUT = {
   COL_FIRST_LESSON: 6
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SCHOOL BRANDING - UPDATE THESE VALUES FOR YOUR SCHOOL
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SCHOOL_BRANDING = {
+  // Primary school colors - UPDATE THESE with your school's colors
+  PRIMARY_COLOR: "#00838F",      // Teal - main header background
+  SECONDARY_COLOR: "#FFB300",    // Gold/Amber - accent color
+
+  // Font settings
+  FONT_FAMILY: "Calibri",
+  HEADER_FONT_SIZE: 14,
+  SUBHEADER_FONT_SIZE: 10,
+
+  // Logo settings (Google Drive file ID - upload logo and paste the file ID here)
+  // To get file ID: Right-click file in Drive → Get link → copy the ID from the URL
+  // Example URL: https://drive.google.com/file/d/ABC123xyz/view → ID is "ABC123xyz"
+  LOGO_FILE_ID: "",  // Leave empty to skip logo insertion
+  LOGO_WIDTH: 100,   // Logo width in pixels
+  LOGO_HEIGHT: 50,   // Logo height in pixels
+
+  // Derived colors (calculated from primary/secondary)
+  get HEADER_BG() { return this.PRIMARY_COLOR; },
+  get HEADER_FG() { return "#FFFFFF"; },
+  get TITLE_BG() { return this.lightenColor(this.PRIMARY_COLOR, 0.7); },
+  get TITLE_FG() { return "#000000"; },
+  get ACCENT_BG() { return this.SECONDARY_COLOR; },
+
+  // Helper to lighten a color (for title backgrounds)
+  lightenColor(hex, factor) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    const lr = Math.round(r + (255 - r) * factor);
+    const lg = Math.round(g + (255 - g) * factor);
+    const lb = Math.round(b + (255 - b) * factor);
+    return `#${lr.toString(16).padStart(2, '0')}${lg.toString(16).padStart(2, '0')}${lb.toString(16).padStart(2, '0')}`;
+  }
+};
+
 const COLORS = {
   Y: "#d4edda",        // Light green - Yes/Pass
   N: "#f8d7da",        // Light red - No/Fail
   A: "#fff3cd",        // Light yellow - Absent
-  HEADER_BG: "#4A90E2",
-  HEADER_FG: "#FFFFFF",
-  TITLE_BG: "#ADD8E6",
-  TITLE_FG: "#000000",
+  HEADER_BG: SCHOOL_BRANDING.HEADER_BG,
+  HEADER_FG: SCHOOL_BRANDING.HEADER_FG,
+  TITLE_BG: SCHOOL_BRANDING.TITLE_BG,
+  TITLE_FG: SCHOOL_BRANDING.TITLE_FG,
   SUB_HEADER_BG: "#f8f9fa",
   PLACEHOLDER_FG: "#999999"
 };
@@ -438,6 +478,37 @@ function getOrCreateSheet(ss, sheetName, clearIfExists = true) {
   return sheet;
 }
 
+/**
+ * Creates a non-merged header row with consistent branding
+ * @param {Sheet} sheet - The sheet to add header to
+ * @param {number} row - Row number for the header
+ * @param {string} text - Header text
+ * @param {number} width - Number of columns to span (background only, no merge)
+ * @param {Object} options - Formatting options
+ */
+function createHeader(sheet, row, text, width, options = {}) {
+  // Set background across the full width (no merge)
+  const fullRange = sheet.getRange(row, 1, 1, width);
+  if (options.background) fullRange.setBackground(options.background);
+
+  // Set text in first column only (or column 2 if logo present and row 1)
+  const textCol = (row === 1 && SCHOOL_BRANDING.LOGO_FILE_ID) ? 2 : 1;
+  const textRange = sheet.getRange(row, textCol);
+  textRange.setValue(text);
+
+  // Apply font styling to the text cell
+  textRange.setFontFamily(options.fontFamily || SCHOOL_BRANDING.FONT_FAMILY);
+  if (options.fontColor) textRange.setFontColor(options.fontColor);
+  if (options.fontWeight) textRange.setFontWeight(options.fontWeight);
+  if (options.fontSize) textRange.setFontSize(options.fontSize);
+  if (options.fontStyle) textRange.setFontStyle(options.fontStyle);
+  if (options.horizontalAlignment) textRange.setHorizontalAlignment(options.horizontalAlignment);
+}
+
+/**
+ * DEPRECATED: Use createHeader() instead - this function merges cells
+ * Kept for backward compatibility during transition
+ */
 function createMergedHeader(sheet, row, text, width, options = {}) {
   const values = [text];
   for (let i = 1; i < width; i++) values.push("");
@@ -450,6 +521,65 @@ function createMergedHeader(sheet, row, text, width, options = {}) {
   if (options.fontFamily) range.setFontFamily(options.fontFamily);
   if (options.fontStyle) range.setFontStyle(options.fontStyle);
   if (options.horizontalAlignment) range.setHorizontalAlignment(options.horizontalAlignment);
+}
+
+/**
+ * Inserts the school logo into a sheet (row 1, column A)
+ * Logo is pulled from Google Drive using the LOGO_FILE_ID in SCHOOL_BRANDING
+ * @param {Sheet} sheet - The sheet to add logo to
+ * @returns {boolean} True if logo was inserted, false if skipped
+ */
+function insertSheetLogo(sheet) {
+  if (!SCHOOL_BRANDING.LOGO_FILE_ID) return false;
+
+  try {
+    const logoBlob = DriveApp.getFileById(SCHOOL_BRANDING.LOGO_FILE_ID).getBlob();
+    const image = sheet.insertImage(logoBlob, 1, 1);
+
+    // Resize logo to configured dimensions
+    image.setWidth(SCHOOL_BRANDING.LOGO_WIDTH);
+    image.setHeight(SCHOOL_BRANDING.LOGO_HEIGHT);
+
+    // Set row height to accommodate logo
+    sheet.setRowHeight(1, SCHOOL_BRANDING.LOGO_HEIGHT + 10);
+
+    return true;
+  } catch (e) {
+    Logger.log("Could not insert logo: " + e.message);
+    return false;
+  }
+}
+
+/**
+ * Sets up standard sheet formatting with logo and headers
+ * Call this when creating new sheets for consistent branding
+ * @param {Sheet} sheet - The sheet to format
+ * @param {string} title - Main title text
+ * @param {string} subtitle - Subtitle/description text
+ * @param {number} width - Number of columns
+ */
+function applySheetBranding(sheet, title, subtitle, width) {
+  // Insert logo (if configured)
+  insertSheetLogo(sheet);
+
+  // Row 1: Title header
+  createHeader(sheet, 1, title, width, {
+    background: COLORS.TITLE_BG,
+    fontColor: COLORS.TITLE_FG,
+    fontWeight: "bold",
+    fontSize: SCHOOL_BRANDING.HEADER_FONT_SIZE
+  });
+
+  // Row 2: Subtitle
+  createHeader(sheet, 2, subtitle, width, {
+    fontFamily: SCHOOL_BRANDING.FONT_FAMILY,
+    fontSize: SCHOOL_BRANDING.SUBHEADER_FONT_SIZE,
+    fontStyle: "italic"
+  });
+
+  // Apply Calibri font to entire sheet (affects new data)
+  sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns())
+    .setFontFamily(SCHOOL_BRANDING.FONT_FAMILY);
 }
 
 function applyStatusConditionalFormatting(sheet, startRow, startCol, numRows, numCols) {
@@ -692,12 +822,11 @@ function generateSystemSheets(ss, wizardData) {
 
 function createSmallGroupProgressSheet(ss) {
   const sheet = getOrCreateSheet(ss, SHEET_NAMES_V2.SMALL_GROUP_PROGRESS);
-  createMergedHeader(sheet, 1, "SMALL GROUP PROGRESS - DATA LOG", 6, {
-    background: COLORS.TITLE_BG, fontColor: COLORS.TITLE_FG, fontWeight: "bold", fontSize: 14
-  });
-  createMergedHeader(sheet, 2, "Data from the Web App is saved here. Do not manually edit.", 6, {
-    fontFamily: "Calibri", fontSize: 10, fontStyle: "italic"
-  });
+  applySheetBranding(sheet,
+    "SMALL GROUP PROGRESS - DATA LOG",
+    "Data from the Web App is saved here. Do not manually edit.",
+    6
+  );
   setColumnHeaders(sheet, 5, ["Date", "Teacher", "Group Name", "Student Name", "Lesson Number", "Status"]);
   sheet.setColumnWidth(1, 100); sheet.setColumnWidth(2, 150); sheet.setColumnWidth(3, 150);
   sheet.setColumnWidth(4, 200); sheet.setColumnWidth(5, 120); sheet.setColumnWidth(6, 80);
@@ -707,12 +836,11 @@ function createSmallGroupProgressSheet(ss) {
 function createUFLIMapSheet(ss, wizardData) {
   const sheet = getOrCreateSheet(ss, SHEET_NAMES_V2.UFLI_MAP);
   const headerWidth = LAYOUT.COL_CURRENT_LESSON + LAYOUT.TOTAL_LESSONS;
-  createMergedHeader(sheet, 1, "UFLI MAP - MASTER PROGRESS REPORT", headerWidth, {
-    background: COLORS.TITLE_BG, fontColor: COLORS.TITLE_FG, fontWeight: "bold", fontSize: 14
-  });
-  createMergedHeader(sheet, 2, "Master tracking grid for all UFLI lessons by student", headerWidth, {
-    fontFamily: "Calibri", fontSize: 10, fontStyle: "italic"
-  });
+  applySheetBranding(sheet,
+    "UFLI MAP - MASTER PROGRESS REPORT",
+    "Master tracking grid for all UFLI lessons by student",
+    headerWidth
+  );
   // Rows 3-4 are spacers
   const headers = ["Student Name", "Grade", "Teacher", "Group", "Current Lesson"];
   for (let i = 1; i <= LAYOUT.TOTAL_LESSONS; i++) headers.push(LESSON_LABELS[i] || `Lesson ${i}`);
@@ -735,12 +863,11 @@ function createUFLIMapSheet(ss, wizardData) {
 function createSkillsSheet(ss, wizardData) {
   const sheet = getOrCreateSheet(ss, SHEET_NAMES_V2.SKILLS);
   const headerWidth = 4 + Object.keys(SKILL_SECTIONS).length;
-  createMergedHeader(sheet, 1, "SKILLS TRACKER", headerWidth, {
-    background: COLORS.TITLE_BG, fontColor: COLORS.TITLE_FG, fontWeight: "bold", fontSize: 14
-  });
-  createMergedHeader(sheet, 2, "Skill section mastery percentages by student", headerWidth, {
-    fontFamily: "Calibri", fontSize: 10, fontStyle: "italic"
-  });
+  applySheetBranding(sheet,
+    "SKILLS TRACKER",
+    "Skill section mastery percentages by student",
+    headerWidth
+  );
   // Rows 3-4 are spacers
   const skillSectionNames = Object.keys(SKILL_SECTIONS);
   const headers = ["Student Name", "Grade", "Teacher", "Group"];
@@ -773,12 +900,11 @@ function createGradeSummarySheet(ss, wizardData) {
     headers.push(`${section} (Total %)`);
   });
   const headerWidth = headers.length;
-  createMergedHeader(sheet, 1, "GRADE SUMMARY - BENCHMARK TRACKING", headerWidth, {
-    background: COLORS.TITLE_BG, fontColor: COLORS.TITLE_FG, fontWeight: "bold", fontSize: 14
-  });
-  createMergedHeader(sheet, 2, "Student progress metrics and benchmark status", headerWidth, {
-    fontFamily: "Calibri", fontSize: 10, fontStyle: "italic"
-  });
+  applySheetBranding(sheet,
+    "GRADE SUMMARY - BENCHMARK TRACKING",
+    "Student progress metrics and benchmark status",
+    headerWidth
+  );
   // Rows 3-4 are spacers
   setColumnHeaders(sheet, 5, headers);
   
@@ -832,10 +958,10 @@ function createSingleGradeSheet(ss, sheetName, groupNames, allStudents) {
   
   groupNames.forEach(groupName => {
     const groupStudents = allStudents.filter(s => s && s.group === groupName);
-    
-    // Group Name Header
-    createMergedHeader(sheet, currentRow, groupName, columnCount, {
-      background: COLORS.HEADER_BG, fontColor: COLORS.HEADER_FG, fontWeight: "bold", fontSize: 12, horizontalAlignment: "center"
+
+    // Group Name Header (no merge - just background across row)
+    createHeader(sheet, currentRow, groupName, columnCount, {
+      background: COLORS.HEADER_BG, fontColor: COLORS.HEADER_FG, fontWeight: "bold", fontSize: 12, horizontalAlignment: "left"
     });
     currentRow++;
     
@@ -881,29 +1007,27 @@ function createSingleGradeSheet(ss, sheetName, groupNames, allStudents) {
 function createPacingReports(ss) {
   // Dashboard Sheet
   const dashboardSheet = getOrCreateSheet(ss, SHEET_NAMES_PACING.DASHBOARD);
-  createMergedHeader(dashboardSheet, 1, "PACING DASHBOARD", 13, {  // Changed from 11 to 13
-    background: COLORS.TITLE_BG, fontColor: COLORS.TITLE_FG, fontWeight: "bold", fontSize: 14
-  });
-  createMergedHeader(dashboardSheet, 2, "Group pacing progress and performance metrics", 13, {  // Changed from 11 to 13
-    fontFamily: "Calibri", fontSize: 10, fontStyle: "italic"
-  });
+  applySheetBranding(dashboardSheet,
+    "PACING DASHBOARD",
+    "Group pacing progress and performance metrics",
+    13
+  );
   // Rows 3-4 are spacers
   setColumnHeaders(dashboardSheet, 5, [
-    "Group", "Teacher", "Students", "Assigned Lessons", "Tracked Lessons", 
-    "Pacing %", "Highest Lesson", "Last Entry", 
-    "Expected Time (min)", "Actual Time (min)",  // NEW COLUMNS
+    "Group", "Teacher", "Students", "Assigned Lessons", "Tracked Lessons",
+    "Pacing %", "Highest Lesson", "Last Entry",
+    "Expected Time (min)", "Actual Time (min)",
     "Avg Pass %", "Avg Not Passed %", "Absent %"
   ]);
   dashboardSheet.setFrozenRows(5);
-  
+
   // Log Sheet
   const logSheet = getOrCreateSheet(ss, SHEET_NAMES_PACING.LOG);
-  createMergedHeader(logSheet, 1, "PACING LOG", 12, {
-    background: COLORS.TITLE_BG, fontColor: COLORS.TITLE_FG, fontWeight: "bold", fontSize: 14
-  });
-  createMergedHeader(logSheet, 2, "Detailed lesson-by-lesson pacing data", 12, {
-    fontFamily: "Calibri", fontSize: 10, fontStyle: "italic"
-  });
+  applySheetBranding(logSheet,
+    "PACING LOG",
+    "Detailed lesson-by-lesson pacing data",
+    12
+  );
   // Rows 3-4 are spacers
   setColumnHeaders(logSheet, 5, ["Group", "Teacher", "Lesson Slot", "UFLI Lesson", "Student Count", "Y Count", "N Count", "A Count", "Pass %", "Not Passed %", "Absent %", "Last Date"]);
   logSheet.setFrozenRows(5);
@@ -1265,11 +1389,11 @@ function renderGroupTable(sheet, row, groups) {
     row += tableData.length;
   }
   
-  // Flags summary
+  // Flags summary (no merge)
   if (flaggedGroups.length > 0) {
-    sheet.getRange(row, 1, 1, 7).merge()
-      .setValue(`⚠️ ${flaggedGroups.length} group(s) need attention: ${flaggedGroups.join(", ")}`)
-      .setFontColor(DASHBOARD_COLORS.AT_RISK)
+    sheet.getRange(row, 1).setValue(`⚠️ ${flaggedGroups.length} group(s) need attention: ${flaggedGroups.join(", ")}`);
+    sheet.getRange(row, 1, 1, 7).setBackground("#fff8e1"); // Light warning background
+    sheet.getRange(row, 1).setFontColor(DASHBOARD_COLORS.AT_RISK)
       .setFontSize(10)
       .setFontStyle("italic")
       .setWrap(true);
@@ -1995,58 +2119,55 @@ function updateSchoolSummary() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function renderDashboardHeader(sheet, schoolName) {
-  // Row 1: Main title bar
-  sheet.getRange(1, 1, 1, 5).merge()
-    .setValue(`📊  SCHOOL SUMMARY DASHBOARD`)
-    .setBackground(DASHBOARD_COLORS.HEADER_BG)
-    .setFontColor(DASHBOARD_COLORS.HEADER_TEXT)
+  // Row 1: Main title bar (no merge)
+  sheet.getRange(1, 1).setValue(`SCHOOL SUMMARY DASHBOARD`);
+  sheet.getRange(1, 1, 1, 5).setBackground(DASHBOARD_COLORS.HEADER_BG);
+  sheet.getRange(1, 1).setFontColor(DASHBOARD_COLORS.HEADER_TEXT)
     .setFontSize(18)
     .setFontWeight("bold")
-    .setVerticalAlignment("middle")
-    .setHorizontalAlignment("center");
+    .setFontFamily("Calibri")
+    .setVerticalAlignment("middle");
   sheet.setRowHeight(1, 50);
-  
-  // Row 2: School name and date
-  sheet.getRange(2, 1, 1, 3).merge()
-    .setValue(schoolName)
-    .setFontSize(12)
+
+  // Row 2: School name (no merge)
+  sheet.getRange(2, 1).setValue(schoolName);
+  sheet.getRange(2, 1).setFontSize(12)
     .setFontWeight("bold")
+    .setFontFamily("Calibri")
     .setFontColor(DASHBOARD_COLORS.SECTION_LABEL)
     .setVerticalAlignment("middle");
-  
-  sheet.getRange(2, 4, 1, 2).merge()
-    .setValue(`Updated: ${new Date().toLocaleDateString()}`)
-    .setFontSize(10)
+
+  sheet.getRange(2, 5).setValue(`Updated: ${new Date().toLocaleDateString()}`);
+  sheet.getRange(2, 5).setFontSize(10)
+    .setFontFamily("Calibri")
     .setFontColor(DASHBOARD_COLORS.SECTION_LABEL)
     .setHorizontalAlignment("right")
     .setVerticalAlignment("middle");
   sheet.setRowHeight(2, 30);
-  
-  // Row 3: Dashboard description
+
+  // Row 3: Dashboard description (no merge)
   const description = "Growth & Pacing Metrics: Initial average, current average, growth percentage, and instructional pacing rate  •  " +
     "Student Distribution: Visual breakdown of students On Track (80%+), Progressing (50-79%), and Needs Support (<50%)  •  " +
     "Group Performance Table: Pass rate and Absenteeism rate for each instructional group with status indicators";
-    +
-    
-  
-  sheet.getRange(3, 1, 1, 5).merge()
-    .setValue(description)
-    .setFontSize(9)
+
+  sheet.getRange(3, 1).setValue(description);
+  sheet.getRange(3, 1, 1, 5).setBackground("#f8f9fa");
+  sheet.getRange(3, 1).setFontSize(9)
     .setFontColor(DASHBOARD_COLORS.SECTION_LABEL)
     .setFontStyle("italic")
     .setFontFamily("Calibri")
     .setVerticalAlignment("middle")
     .setWrap(true);
   sheet.setRowHeight(3, 45);  // Taller row to accommodate wrapped text
-  
+
   // Row 4: Subtle divider line
   sheet.getRange(4, 1, 1, 5)
     .setBorder(null, null, true, null, null, null, DASHBOARD_COLORS.CARD_BORDER, SpreadsheetApp.BorderStyle.SOLID);
   sheet.setRowHeight(4, 8);
-  
+
   // Row 5: Spacer
   sheet.setRowHeight(5, 15);
-  
+
   return 6; // Next available row (shifted down by 1)
 }
 
@@ -2064,12 +2185,13 @@ function renderGradeCard(sheet, startRow, grade, students, groups, initialData, 
     ? `${grade}  •  ${displayCount} students`
     : `${grade}  •  ${displayCount} students  •  ${groups.length} groups`;
 
-  sheet.getRange(row, 1, 1, 5).merge()
-    .setValue(headerText)
-    .setBackground(DASHBOARD_COLORS.GRADE_HEADER_BG)
-    .setFontColor(DASHBOARD_COLORS.GRADE_HEADER_TEXT)
+  // Grade header (no merge)
+  sheet.getRange(row, 1).setValue(headerText);
+  sheet.getRange(row, 1, 1, 5).setBackground(DASHBOARD_COLORS.GRADE_HEADER_BG);
+  sheet.getRange(row, 1).setFontColor(DASHBOARD_COLORS.GRADE_HEADER_TEXT)
     .setFontSize(13)
     .setFontWeight("bold")
+    .setFontFamily("Calibri")
     .setVerticalAlignment("middle");
   sheet.setRowHeight(row, 36);
   row++;

@@ -774,12 +774,14 @@ function createStudentRosterSheet(ss, data) {
     sheet.clear();
   }
   
-  sheet.getRange(1, 1, 1, 4).setValues([["STUDENT ROSTER", "", "", ""]]);
-  sheet.getRange(1, 1, 1, 4).merge().setBackground(COLORS.TITLE_BG).setFontColor(COLORS.TITLE_FG)
-    .setFontWeight("bold").setFontSize(14);
-  
-  sheet.getRange(2, 1, 1, 4).setValues([["Complete roster of all students receiving UFLI intervention", "", "", ""]]);
-  sheet.getRange(2, 1, 1, 4).merge().setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
+  // Row 1: Title header (no merge)
+  sheet.getRange(1, 1).setValue("STUDENT ROSTER");
+  sheet.getRange(1, 1, 1, 4).setBackground(COLORS.TITLE_BG);
+  sheet.getRange(1, 1).setFontColor(COLORS.TITLE_FG).setFontWeight("bold").setFontSize(14).setFontFamily("Calibri");
+
+  // Row 2: Subtitle (no merge)
+  sheet.getRange(2, 1).setValue("Complete roster of all students receiving UFLI intervention");
+  sheet.getRange(2, 1).setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
   
   sheet.getRange(5, 1, 1, 4).setValues([["Student Name", "Grade", "Teacher", "Group"]]);
   sheet.getRange(5, 1, 1, 4).setBackground(COLORS.HEADER_BG).setFontColor(COLORS.HEADER_FG)
@@ -814,12 +816,14 @@ function createTeacherRosterSheet(ss, data) {
     sheet.clear();
   }
   
-  sheet.getRange(1, 1, 1, 2).setValues([["TEACHER ROSTER", ""]]);
-  sheet.getRange(1, 1, 1, 2).merge().setBackground(COLORS.TITLE_BG).setFontColor(COLORS.TITLE_FG)
-    .setFontWeight("bold").setFontSize(14);
-  
-  sheet.getRange(2, 1, 1, 2).setValues([["All teachers with homeroom assignments", ""]]);
-  sheet.getRange(2, 1, 1, 2).merge().setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
+  // Row 1: Title header (no merge)
+  sheet.getRange(1, 1).setValue("TEACHER ROSTER");
+  sheet.getRange(1, 1, 1, 2).setBackground(COLORS.TITLE_BG);
+  sheet.getRange(1, 1).setFontColor(COLORS.TITLE_FG).setFontWeight("bold").setFontSize(14).setFontFamily("Calibri");
+
+  // Row 2: Subtitle (no merge)
+  sheet.getRange(2, 1).setValue("All teachers with homeroom assignments");
+  sheet.getRange(2, 1).setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
   
   sheet.getRange(5, 1, 1, 2).setValues([["Teacher Name", "Grade Assignment(s)"]]);
   sheet.getRange(5, 1, 1, 2).setBackground(COLORS.HEADER_BG).setFontColor(COLORS.HEADER_FG)
@@ -850,12 +854,14 @@ function createGroupConfigSheet(ss, data) {
     sheet.clear();
   }
   
-  sheet.getRange(1, 1, 1, 4).setValues([["", "GROUP CONFIGURATION", "", ""]]);
-  sheet.getRange(1, 2, 1, 3).merge().setBackground(COLORS.TITLE_BG).setFontColor(COLORS.TITLE_FG)
-    .setFontWeight("bold").setFontSize(14);
-  
-  sheet.getRange(2, 1, 1, 4).setValues([["", "Intervention group structure by grade level", "", ""]]);
-  sheet.getRange(2, 2, 1, 3).merge().setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
+  // Row 1: Title header (no merge)
+  sheet.getRange(1, 1).setValue("GROUP CONFIGURATION");
+  sheet.getRange(1, 1, 1, 4).setBackground(COLORS.TITLE_BG);
+  sheet.getRange(1, 1).setFontColor(COLORS.TITLE_FG).setFontWeight("bold").setFontSize(14).setFontFamily("Calibri");
+
+  // Row 2: Subtitle (no merge)
+  sheet.getRange(2, 1).setValue("Intervention group structure by grade level");
+  sheet.getRange(2, 1).setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
   
   sheet.getRange(5, 1, 1, 4).setValues([["Group Name", "Grade", "# of Groups", "Students"]]);
   sheet.getRange(5, 1, 1, 4).setBackground(COLORS.HEADER_BG).setFontColor(COLORS.HEADER_FG)
@@ -923,12 +929,14 @@ function createFeatureSettingsSheet(ss, data) {
     sheet.clear();
   }
   
-  sheet.getRange(1, 1, 1, 3).setValues([["FEATURE SETTINGS", "", ""]]);
-  sheet.getRange(1, 1, 1, 3).merge().setBackground(COLORS.TITLE_BG).setFontColor(COLORS.TITLE_FG)
-    .setFontWeight("bold").setFontSize(14);
-  
-  sheet.getRange(2, 1, 1, 3).setValues([["Optional features enabled for this site", "", ""]]);
-  sheet.getRange(2, 1, 1, 3).merge().setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
+  // Row 1: Title header (no merge)
+  sheet.getRange(1, 1).setValue("FEATURE SETTINGS");
+  sheet.getRange(1, 1, 1, 3).setBackground(COLORS.TITLE_BG);
+  sheet.getRange(1, 1).setFontColor(COLORS.TITLE_FG).setFontWeight("bold").setFontSize(14).setFontFamily("Calibri");
+
+  // Row 2: Subtitle (no merge)
+  sheet.getRange(2, 1).setValue("Optional features enabled for this site");
+  sheet.getRange(2, 1).setFontFamily("Calibri").setFontSize(10).setFontStyle("italic");
   
   sheet.getRange(5, 1, 1, 3).setValues([["Feature", "Enabled", "Description"]]);
   sheet.getRange(5, 1, 1, 3).setBackground(COLORS.HEADER_BG).setFontColor(COLORS.HEADER_FG)

@@ -1865,13 +1865,14 @@ function renderMixedGradeGroupTable(sheet, row, pacingData) {
     row += rows.length;
   }
   
-  // Flags summary if any
+  // Flags summary if any (no merge)
   if (flaggedGroups.length > 0) {
-    sheet.getRange(row, 1, 1, 7).merge()
-      .setValue(`⚠️ ${flaggedGroups.length} group(s) need attention: ${flaggedGroups.join(", ")}`)
-      .setFontColor(DASHBOARD_COLORS.AT_RISK)
+    sheet.getRange(row, 1).setValue(`⚠️ ${flaggedGroups.length} group(s) need attention: ${flaggedGroups.join(", ")}`);
+    sheet.getRange(row, 1, 1, 7).setBackground("#fff8e1"); // Light warning background
+    sheet.getRange(row, 1).setFontColor(DASHBOARD_COLORS.AT_RISK)
       .setFontSize(10)
       .setFontStyle("italic")
+      .setFontFamily("Calibri")
       .setWrap(true);
     sheet.setRowHeight(row, 36);
     row++;

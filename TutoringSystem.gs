@@ -193,19 +193,17 @@ function createTutoringProgressLogSheet(ss) {
     sheet.clearConditionalFormatRules();
   }
   
-  // Title row
-  sheet.getRange(1, 1, 1, 7).merge()
-    .setValue("TUTORING PROGRESS LOG")
-    .setBackground(TUTORING_COLORS.TITLE_BG)
-    .setFontColor(TUTORING_COLORS.TITLE_FG)
+  // Title row (no merge)
+  sheet.getRange(1, 1).setValue("TUTORING PROGRESS LOG");
+  sheet.getRange(1, 1, 1, 7).setBackground(TUTORING_COLORS.TITLE_BG);
+  sheet.getRange(1, 1).setFontColor(TUTORING_COLORS.TITLE_FG)
     .setFontWeight("bold")
     .setFontSize(14)
     .setFontFamily("Calibri");
-  
-  // Subtitle
-  sheet.getRange(2, 1, 1, 7).merge()
-    .setValue("Tracks all tutoring/intervention sessions separately from whole-group UFLI instruction")
-    .setFontFamily("Calibri")
+
+  // Subtitle (no merge)
+  sheet.getRange(2, 1).setValue("Tracks all tutoring/intervention sessions separately from whole-group UFLI instruction");
+  sheet.getRange(2, 1).setFontFamily("Calibri")
     .setFontSize(10)
     .setFontStyle("italic");
   
@@ -247,19 +245,17 @@ function createTutoringSummarySheet(ss) {
     sheet.clearConditionalFormatRules();
   }
   
-  // Title row
-  sheet.getRange(1, 1, 1, 13).merge()
-    .setValue("TUTORING SUMMARY - INTERVENTION TRACKING")
-    .setBackground(TUTORING_COLORS.TITLE_BG)
-    .setFontColor(TUTORING_COLORS.TITLE_FG)
+  // Title row (no merge)
+  sheet.getRange(1, 1).setValue("TUTORING SUMMARY - INTERVENTION TRACKING");
+  sheet.getRange(1, 1, 1, 13).setBackground(TUTORING_COLORS.TITLE_BG);
+  sheet.getRange(1, 1).setFontColor(TUTORING_COLORS.TITLE_FG)
     .setFontWeight("bold")
     .setFontSize(14)
     .setFontFamily("Calibri");
-  
-  // Subtitle
-  sheet.getRange(2, 1, 1, 13).merge()
-    .setValue("Aggregated view of tutoring interventions by student (updates automatically when you sync)")
-    .setFontFamily("Calibri")
+
+  // Subtitle (no merge)
+  sheet.getRange(2, 1).setValue("Aggregated view of tutoring interventions by student (updates automatically when you sync)");
+  sheet.getRange(2, 1).setFontFamily("Calibri")
     .setFontSize(10)
     .setFontStyle("italic");
   
