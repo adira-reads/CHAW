@@ -510,17 +510,50 @@
       <div class="step-content active" data-step="1">
         <h2 class="step-title">Welcome! Let's Get Started</h2>
         <p class="step-description">
-          First, tell us the name of your school. This will appear on all reports and dashboards.
+          Tell us about your school. This information will appear on all reports and dashboards.
         </p>
-        
+
         <div class="form-group">
           <label for="schoolName">School Name *</label>
           <input type="text" id="schoolName" placeholder="Enter your school name" />
           <div class="small-text">Example: Lincoln Elementary School</div>
         </div>
-        
+
+        <div class="form-group" style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+          <label style="font-size: 16px; margin-bottom: 16px;">School Branding (Optional)</label>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+              <label for="primaryColor">Primary Color</label>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="color" id="primaryColor" value="#00838F" style="width: 60px; height: 40px; padding: 2px; cursor: pointer;" />
+                <input type="text" id="primaryColorHex" value="#00838F" style="width: 100px;" onchange="syncColorFromHex('primary')" />
+              </div>
+              <div class="small-text">Main header background color</div>
+            </div>
+
+            <div>
+              <label for="secondaryColor">Secondary/Accent Color</label>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="color" id="secondaryColor" value="#FFB300" style="width: 60px; height: 40px; padding: 2px; cursor: pointer;" />
+                <input type="text" id="secondaryColorHex" value="#FFB300" style="width: 100px;" onchange="syncColorFromHex('secondary')" />
+              </div>
+              <div class="small-text">Accent and highlight color</div>
+            </div>
+          </div>
+
+          <div style="margin-top: 20px;">
+            <label for="logoFileId">Logo File ID (Google Drive)</label>
+            <input type="text" id="logoFileId" placeholder="e.g., 1ABC123xyz..." style="font-family: monospace;" />
+            <div class="small-text">
+              To get the file ID: Upload your logo to Google Drive → Right-click → Get link →
+              Copy the ID from the URL (the part after /d/ and before /view)
+            </div>
+          </div>
+        </div>
+
         <div class="alert alert-info">
-          <strong>💡 Tip:</strong> Use your school's official name as it appears on district documents.
+          <strong>💡 Tip:</strong> Use your school's official colors for consistent branding across all sheets.
         </div>
       </div>
       
@@ -750,7 +783,12 @@
         combinations: []
       },
       features: {},
-      groupRecommendations: {}
+      groupRecommendations: {},
+      branding: {
+        primaryColor: '#00838F',
+        secondaryColor: '#FFB300',
+        logoFileId: ''
+      }
     };
     
     // Constants for dynamic content
@@ -779,8 +817,43 @@
     window.onload = function() {
       initializeGradeCheckboxes();
       initializeFeaturesList();
+      initializeBrandingInputs();
       loadExistingData();
     };
+
+    function initializeBrandingInputs() {
+      // Sync color picker with hex input
+      document.getElementById('primaryColor').addEventListener('input', function() {
+        document.getElementById('primaryColorHex').value = this.value.toUpperCase();
+        wizardData.branding.primaryColor = this.value.toUpperCase();
+      });
+      document.getElementById('secondaryColor').addEventListener('input', function() {
+        document.getElementById('secondaryColorHex').value = this.value.toUpperCase();
+        wizardData.branding.secondaryColor = this.value.toUpperCase();
+      });
+    }
+
+    function syncColorFromHex(type) {
+      const hexInput = document.getElementById(type + 'ColorHex');
+      const colorPicker = document.getElementById(type + 'Color');
+      let value = hexInput.value.trim();
+
+      // Add # if missing
+      if (value && !value.startsWith('#')) {
+        value = '#' + value;
+      }
+
+      // Validate hex format
+      if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+        colorPicker.value = value;
+        hexInput.value = value.toUpperCase();
+        if (type === 'primary') {
+          wizardData.branding.primaryColor = value.toUpperCase();
+        } else {
+          wizardData.branding.secondaryColor = value.toUpperCase();
+        }
+      }
+    }
     
     function initializeGradeCheckboxes() {
       const container = document.getElementById('gradesCheckboxes');
@@ -867,6 +940,22 @@
             });
             updateFeatures(); // Sync wizardData
           }
+
+          // Load branding settings
+          if (data.branding) {
+            wizardData.branding = data.branding;
+            if (data.branding.primaryColor) {
+              document.getElementById('primaryColor').value = data.branding.primaryColor;
+              document.getElementById('primaryColorHex').value = data.branding.primaryColor;
+            }
+            if (data.branding.secondaryColor) {
+              document.getElementById('secondaryColor').value = data.branding.secondaryColor;
+              document.getElementById('secondaryColorHex').value = data.branding.secondaryColor;
+            }
+            if (data.branding.logoFileId) {
+              document.getElementById('logoFileId').value = data.branding.logoFileId;
+            }
+          }
         })
         .getWizardData();
     }
@@ -925,8 +1014,12 @@
           if (!wizardData.schoolName) {
             return { valid: false, message: 'Please enter a school name.' };
           }
+          // Save branding settings
+          wizardData.branding.primaryColor = document.getElementById('primaryColorHex').value.trim() || '#00838F';
+          wizardData.branding.secondaryColor = document.getElementById('secondaryColorHex').value.trim() || '#FFB300';
+          wizardData.branding.logoFileId = document.getElementById('logoFileId').value.trim() || '';
           return { valid: true };
-          
+
         case 2:
           if (wizardData.gradesServed.length === 0) {
             return { valid: false, message: 'Please select at least one grade level.' };
@@ -1326,6 +1419,11 @@ function normalizeGrade(grade) {
       html += '<div class="summary-section">';
       html += '<h3>School Information</h3>';
       html += `<div class="summary-item"><span class="summary-label">School Name:</span><span class="summary-value">${wizardData.schoolName}</span></div>`;
+      html += `<div class="summary-item"><span class="summary-label">Primary Color:</span><span class="summary-value"><span style="display:inline-block;width:20px;height:20px;background:${wizardData.branding.primaryColor};vertical-align:middle;margin-right:8px;border:1px solid #ccc;"></span>${wizardData.branding.primaryColor}</span></div>`;
+      html += `<div class="summary-item"><span class="summary-label">Secondary Color:</span><span class="summary-value"><span style="display:inline-block;width:20px;height:20px;background:${wizardData.branding.secondaryColor};vertical-align:middle;margin-right:8px;border:1px solid #ccc;"></span>${wizardData.branding.secondaryColor}</span></div>`;
+      if (wizardData.branding.logoFileId) {
+        html += `<div class="summary-item"><span class="summary-label">Logo:</span><span class="summary-value">Configured (${wizardData.branding.logoFileId.substring(0, 12)}...)</span></div>`;
+      }
       html += '</div>';
       
       html += '<div class="summary-section">';

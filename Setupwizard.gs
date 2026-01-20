@@ -81,7 +81,12 @@ const CONFIG_LAYOUT = {
     GRADE_MIXING_ROW: 17,
     COMBINATIONS_ROW: 18,
     VERSION_ROW: 20,
-    LAST_UPDATED_ROW: 21
+    LAST_UPDATED_ROW: 21,
+    // Branding section (rows 23-26)
+    BRANDING_HEADER_ROW: 23,
+    PRIMARY_COLOR_ROW: 24,
+    SECONDARY_COLOR_ROW: 25,
+    LOGO_FILE_ID_ROW: 26
   },
   ROSTER: {
     TITLE_ROW: 1,
@@ -317,7 +322,7 @@ function openSettings() {
 function getWizardData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const configSheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
-  
+
   if (!configSheet) {
     return {
       schoolName: "",
@@ -329,10 +334,15 @@ function getWizardData() {
         allowed: false,
         combinations: []
       },
-      features: {}
+      features: {},
+      branding: {
+        primaryColor: "#00838F",
+        secondaryColor: "#FFB300",
+        logoFileId: ""
+      }
     };
   }
-  
+
   return {
     schoolName: configSheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.SCHOOL_NAME_ROW, CONFIG_LAYOUT.COLS.VALUE).getValue() || "",
     gradesServed: getExistingGrades(configSheet),
@@ -340,8 +350,38 @@ function getWizardData() {
     teachers: getExistingTeachers(),
     groups: getExistingGroups(),
     gradeMixing: getExistingGradeMixing(configSheet),
-    features: getExistingFeatures()
+    features: getExistingFeatures(),
+    branding: getExistingBranding(configSheet)
   };
+}
+
+/**
+ * Gets existing branding settings from config sheet
+ * @param {Sheet} configSheet - Site Configuration sheet
+ * @returns {Object} Branding settings
+ */
+function getExistingBranding(configSheet) {
+  const defaultBranding = {
+    primaryColor: "#00838F",
+    secondaryColor: "#FFB300",
+    logoFileId: ""
+  };
+
+  if (!configSheet) return defaultBranding;
+
+  try {
+    const primaryColor = configSheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.PRIMARY_COLOR_ROW, CONFIG_LAYOUT.COLS.VALUE).getValue();
+    const secondaryColor = configSheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.SECONDARY_COLOR_ROW, CONFIG_LAYOUT.COLS.VALUE).getValue();
+    const logoFileId = configSheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.LOGO_FILE_ID_ROW, CONFIG_LAYOUT.COLS.VALUE).getValue();
+
+    return {
+      primaryColor: primaryColor || defaultBranding.primaryColor,
+      secondaryColor: secondaryColor || defaultBranding.secondaryColor,
+      logoFileId: logoFileId || ""
+    };
+  } catch (e) {
+    return defaultBranding;
+  }
 }
 
 /**
@@ -754,14 +794,30 @@ function createConfigurationSheet(ss, data) {
   
   sheet.getRange(20, 1).setValue("System Version:");
   sheet.getRange(20, 2).setValue(SYSTEM_VERSION);
-  
+
   sheet.getRange(21, 1).setValue("Last Updated:");
   sheet.getRange(21, 2).setValue(new Date());
-  
+
+  // Branding section
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.BRANDING_HEADER_ROW, 1).setValue("School Branding:");
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.BRANDING_HEADER_ROW, 1).setFontWeight("bold");
+
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.PRIMARY_COLOR_ROW, 1).setValue("Primary Color:");
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.PRIMARY_COLOR_ROW, 2)
+    .setValue(data.branding ? data.branding.primaryColor : "#00838F");
+
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.SECONDARY_COLOR_ROW, 1).setValue("Secondary Color:");
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.SECONDARY_COLOR_ROW, 2)
+    .setValue(data.branding ? data.branding.secondaryColor : "#FFB300");
+
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.LOGO_FILE_ID_ROW, 1).setValue("Logo File ID:");
+  sheet.getRange(CONFIG_LAYOUT.SITE_CONFIG.LOGO_FILE_ID_ROW, 2)
+    .setValue(data.branding ? data.branding.logoFileId : "");
+
   sheet.setColumnWidth(1, 250);
   sheet.setColumnWidth(2, 300);
-  sheet.getRange(2, 1, 21, 2).setFontFamily("Calibri");
-  
+  sheet.getRange(2, 1, 26, 2).setFontFamily("Calibri");
+
   protectSheet(sheet);
 }
 
