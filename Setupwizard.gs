@@ -214,11 +214,15 @@ function onOpen() {
 
     // === SYNC & PERFORMANCE (The New Workflow) ===
     .addSubMenu(ui.createMenu('🔄 Sync & Performance')
-      .addItem('⚡ Recalculate All Stats Now', 'recalculateAllStatsNow') // The only manual sync they need
+      .addItem('⚡ Recalculate All Stats Now', 'recalculateAllStatsNow')
       .addSeparator()
-      .addItem('✅ Enable Nightly Sync', 'setupNightlySyncTrigger')
-      .addItem('❌ Disable Nightly Sync', 'removeNightlySyncTrigger')
-      .addItem('ℹ️ Check Sync Status', 'showTriggerStatus'))
+      .addItem('▶️ Process UFLI MAP Queue Now', 'processSyncQueueManual')
+      .addItem('✅ Enable Hourly UFLI Sync', 'setupSyncQueueTrigger')
+      .addItem('❌ Disable Hourly UFLI Sync', 'disableSyncQueueTrigger')
+      .addSeparator()
+      .addItem('✅ Enable Nightly Full Sync', 'setupNightlySyncTrigger')
+      .addItem('❌ Disable Nightly Full Sync', 'removeNightlySyncTrigger')
+      .addItem('ℹ️ Check Sync Status', 'showSyncStatus'))
 
     // === TUTORING (Optional Module) ===
     .addSubMenu(ui.createMenu('📚 Tutoring')
@@ -1637,8 +1641,7 @@ function saveLessonData(formData) {
     // ═══════════════════════════════════════════════════════════
     else {
       const progressSheet = ss.getSheetByName("Small Group Progress");
-      const mapSheet = ss.getSheetByName("UFLI MAP");
-      
+
       if (!progressSheet) throw new Error('Small Group Progress sheet not found');
       
       const timestamp = new Date();
@@ -1663,15 +1666,16 @@ function saveLessonData(formData) {
       progressSheet.getRange(progressSheet.getLastRow() + 1, 1, progressRows.length, 6).setValues(progressRows);
 
       // STEP 2: Update Group Sheet (TARGETED BATCH)
-      // This is the CRITICAL part that replaces the slow sync
+      // This is immediate so teachers see the update on their grade sheet
       updateGroupSheetTargeted(ss, gradeSheet, groupName, lessonName, activeStatuses);
 
-      // STEP 3: Update UFLI MAP (TARGETED BATCH)
+      // STEP 3: Queue UFLI MAP Update (DEFERRED - processed every 60 min)
+      // This dramatically reduces save time from ~16s to ~3-4s
       const lessonNum = extractLessonNumber(lessonName);
-      if (lessonNum && mapSheet) {
-        updateUFLIMapTargeted(mapSheet, activeStatuses, lessonNum, timestamp);
+      if (lessonNum) {
+        addToSyncQueue(groupName, lessonName, lessonNum, activeStatuses);
       }
-      
+
       // STEP 4: Log unenrolled
       if (unenrolledStudents && unenrolledStudents.length > 0) {
         logUnenrolledStudents(ss, groupName, lessonName, unenrolledStudents, timestamp);
@@ -2045,20 +2049,44 @@ function removeNightlySyncTrigger() {
 }
 
 function showTriggerStatus() {
+  showSyncStatus();
+}
+
+/**
+ * Shows combined sync status for both hourly UFLI queue and nightly full sync
+ */
+function showSyncStatus() {
   const triggers = ScriptApp.getProjectTriggers();
-  const syncTrigger = triggers.find(t => t.getHandlerFunction() === 'runFullSyncDeferred');
-  
-  let message;
-  if (syncTrigger) {
-    message = '✅ Nightly sync is ENABLED.\n\n' +
-              'Stats automatically update at midnight.\n\n' +
-              'To disable: Menu → Performance → Disable Nightly Sync';
-  } else {
-    message = '❌ Nightly sync is DISABLED.\n\n' +
-              'Stats only update when you manually run "Recalculate Now".\n\n' +
-              'To enable: Menu → Performance → Enable Nightly Sync';
+  const nightlyTrigger = triggers.find(t => t.getHandlerFunction() === 'runFullSyncDeferred');
+  const hourlyTrigger = triggers.find(t => t.getHandlerFunction() === 'processSyncQueue');
+
+  // Get queue pending count
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const queueSheet = ss.getSheetByName('Sync Queue');
+  let pendingCount = 0;
+  if (queueSheet) {
+    const lastRow = queueSheet.getLastRow();
+    if (lastRow > 1) {
+      const processedCol = queueSheet.getRange(2, 6, lastRow - 1, 1).getValues();
+      pendingCount = processedCol.filter(row => !row[0] || row[0] === "").length;
+    }
   }
-  
+
+  const message = `
+SYNC STATUS
+═══════════════════════════════════
+
+HOURLY UFLI MAP SYNC (Fast Save)
+${hourlyTrigger ? '✅ ENABLED - Every 60 minutes' : '❌ DISABLED'}
+Pending updates in queue: ${pendingCount}
+
+NIGHTLY FULL SYNC (Stats & Summaries)
+${nightlyTrigger ? '✅ ENABLED - Runs at midnight' : '❌ DISABLED'}
+
+═══════════════════════════════════
+${hourlyTrigger ? 'Teachers experience fast ~3-4 second saves.' : 'Enable Hourly Sync for faster teacher saves.'}
+  `.trim();
+
   SpreadsheetApp.getUi().alert('Sync Status', message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 

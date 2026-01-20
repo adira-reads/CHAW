@@ -313,6 +313,45 @@ The `saveLessonData()` function routes based on:
 2. **Group name contains "Tutoring"** → `saveTutoringData()` (Both logs)
 3. **Otherwise** → `saveStandardUFLIData()` (Small Group Progress → UFLI MAP)
 
+### 6. Performance Architecture (Deferred Sync)
+
+To improve teacher experience, lesson saves use a **deferred sync** pattern:
+
+```
+Teacher Submits Lesson Check (~3-4 seconds total)
+        │
+        ├── 1. Append to "Small Group Progress"     [~1 sec]
+        │      └── Raw log of all lesson entries
+        │
+        ├── 2. Update Grade Group Sheet             [~2-3 sec]
+        │      └── Teachers see this immediately
+        │
+        └── 3. Queue UFLI MAP Update                [~0.5 sec]
+               └── Added to "Sync Queue" sheet
+                          │
+                          ▼
+              ┌─────────────────────────┐
+              │  Every 60 min trigger   │
+              │  processSyncQueue()     │
+              │  └── Batch update UFLI  │
+              └─────────────────────────┘
+```
+
+**Why this matters:**
+- Previous save time: ~16 seconds (teachers waiting)
+- New save time: ~3-4 seconds (teachers happy)
+- UFLI MAP updates within 60 minutes automatically
+
+**Sync Queue Sheet Columns:**
+| Column | Content |
+|--------|---------|
+| Timestamp | When the lesson was submitted |
+| Group Name | The group that was taught |
+| Lesson Name | e.g., "UFLI L42" |
+| Lesson # | Extracted number (42) |
+| Student Data | JSON array of {name, status} |
+| Processed | Timestamp when processed |
+
 ---
 
 ## Setup & Configuration
@@ -426,8 +465,11 @@ Adira Reads Progress Report
 ├── 👨‍🏫 Manage Groups
 ├── 🔄 Sync & Performance
 │   ├── ⚡ Recalculate All Stats Now
-│   ├── ✅ Enable Nightly Sync
-│   ├── ❌ Disable Nightly Sync
+│   ├── ▶️ Process UFLI MAP Queue Now
+│   ├── ✅ Enable Hourly UFLI Sync
+│   ├── ❌ Disable Hourly UFLI Sync
+│   ├── ✅ Enable Nightly Full Sync
+│   ├── ❌ Disable Nightly Full Sync
 │   └── ℹ️ Check Sync Status
 ├── 📚 Tutoring
 │   ├── 📋 View Tutoring Summary
@@ -455,6 +497,7 @@ Adira Reads Progress Report
 | `Phase2_ProgressTracking.gs` | ~3,400 | Sheet generation, sync, calculations |
 | `TutoringSystem.gs` | ~1,500 | Tutoring dual-track system |
 | `MixedGradeSupport_Enhanced.gs` | ~1,900 | Multi-grade group support |
+| `SyncQueueProcessor.gs` | ~350 | Deferred UFLI MAP sync for fast saves |
 | `UnenrollmentAutomation.gs` | ~1,100 | Monday.com integration, archival |
 | `AdminImport_v1.gs` | ~1,000 | Data import utility |
 | `MissingStudents.gs` | ~200 | Cross-sheet validation |
