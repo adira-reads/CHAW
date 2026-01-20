@@ -571,15 +571,36 @@ function createMergedHeader(sheet, row, text, width, options = {}) {
 
 /**
  * Inserts the school logo into a sheet (row 1, column A)
- * Logo is pulled from Google Drive using the LOGO_FILE_ID in SCHOOL_BRANDING
+ * Supports both Google Drive file IDs and external URLs
  * @param {Sheet} sheet - The sheet to add logo to
  * @returns {boolean} True if logo was inserted, false if skipped
  */
 function insertSheetLogo(sheet) {
-  if (!SCHOOL_BRANDING.LOGO_FILE_ID) return false;
+  const logoSource = SCHOOL_BRANDING.LOGO_FILE_ID;
+  if (!logoSource) return false;
 
   try {
-    const logoBlob = DriveApp.getFileById(SCHOOL_BRANDING.LOGO_FILE_ID).getBlob();
+    let logoBlob;
+
+    // Check if it's a URL or a Drive file ID
+    if (logoSource.startsWith('http://') || logoSource.startsWith('https://')) {
+      // Fetch image from URL
+      const response = UrlFetchApp.fetch(logoSource, {
+        muteHttpExceptions: true,
+        followRedirects: true
+      });
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log("Could not fetch logo from URL: HTTP " + response.getResponseCode());
+        return false;
+      }
+
+      logoBlob = response.getBlob();
+    } else {
+      // Treat as Google Drive file ID
+      logoBlob = DriveApp.getFileById(logoSource).getBlob();
+    }
+
     const image = sheet.insertImage(logoBlob, 1, 1);
 
     // Resize logo to configured dimensions
