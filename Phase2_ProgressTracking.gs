@@ -1598,6 +1598,10 @@ function syncSmallGroupProgress() {
     for (const sheetName of Object.keys(MIXED_GRADE_CONFIG)) {
       neededSheets.add(sheetName);
     }
+    // Also add SC Classroom if it exists (self-contained classroom with flat structure)
+    if (ss.getSheetByName("SC Classroom")) {
+      neededSheets.add("SC Classroom");
+    }
     Logger.log('syncSmallGroupProgress: Mixed grades enabled, added sheets: ' + Array.from(neededSheets).join(', '));
   }
 

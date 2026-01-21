@@ -739,17 +739,23 @@ function scanGradeSheetsForPacing_MixedGrade(ss, lookups, progressMap) {
   const { studentCountByGroup, teacherByGroup } = lookups;
   const dashboardRows = [];
   const logRows = [];
-  
+
   // Build list of sheets to scan
   const sheetsToScan = [];
-  
+
   if (ENABLE_MIXED_GRADES) {
     for (const sheetName of Object.keys(MIXED_GRADE_CONFIG)) {
       const sheet = ss.getSheetByName(sheetName);
       if (sheet) sheetsToScan.push(sheet);
     }
   }
-  
+
+  // Add SC Classroom if it exists (special flat structure)
+  const scClassroom = ss.getSheetByName("SC Classroom");
+  if (scClassroom) {
+    Logger.log('scanGradeSheetsForPacing_MixedGrade: Found SC Classroom sheet');
+  }
+
   const standardPattern = /^(PreK|KG|G[1-8]) Groups$/;
   ss.getSheets().forEach(sheet => {
     if (standardPattern.test(sheet.getName())) {
@@ -758,17 +764,23 @@ function scanGradeSheetsForPacing_MixedGrade(ss, lookups, progressMap) {
       }
     }
   });
-  
+
   sheetsToScan.forEach(sheet => {
     const sheetData = sheet.getDataRange().getValues();
-    
+
     if (SHEET_FORMAT === "SANKOFA") {
       processPacing_Sankofa(sheetData, lookups, progressMap, dashboardRows, logRows);
     } else {
       processPacing_Standard(sheetData, lookups, progressMap, dashboardRows, logRows);
     }
   });
-  
+
+  // Process SC Classroom separately (different structure)
+  if (scClassroom) {
+    const scData = scClassroom.getDataRange().getValues();
+    processPacing_SCClassroom(scData, lookups, progressMap, dashboardRows, logRows);
+  }
+
   return { dashboardRows, logRows };
 }
 
@@ -902,6 +914,146 @@ function processPacing_Standard(sheetData, lookups, progressMap, dashboardRows, 
   
   if (currentGroupName) {
     dashboardRows.push(buildDashboardRow(currentGroupName, currentTeacher, studentCount, dash));
+  }
+}
+
+/**
+ * Process pacing for SC Classroom (Self-Contained Classroom)
+ * SC Classroom has a flat structure:
+ * - Row with "Student Name" header
+ * - Next row has lesson names (UFLI L1, UFLI L2, etc.) starting at column C
+ * - Following rows have student data with Grade in column B
+ * - No group divisions - treated as single group "SC Classroom"
+ */
+function processPacing_SCClassroom(sheetData, lookups, progressMap, dashboardRows, logRows) {
+  const { studentCountByGroup, teacherByGroup } = lookups;
+  const groupName = "SC Classroom";
+
+  // Find the "Student Name" header row
+  let headerRowIndex = -1;
+  for (let i = 0; i < sheetData.length; i++) {
+    if (sheetData[i][0] && sheetData[i][0].toString().trim() === "Student Name") {
+      headerRowIndex = i;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    Logger.log('processPacing_SCClassroom: Could not find "Student Name" header');
+    return;
+  }
+
+  // Lesson names are in the row after header
+  const lessonNameRowIndex = headerRowIndex + 1;
+  if (lessonNameRowIndex >= sheetData.length) {
+    Logger.log('processPacing_SCClassroom: No lesson name row found');
+    return;
+  }
+
+  const lessonNames = sheetData[lessonNameRowIndex];
+
+  // Build lesson column map (lessons start at column C, index 2)
+  const lessonColumnMap = {};
+  for (let col = 2; col < lessonNames.length; col++) {
+    const lessonName = lessonNames[col] ? lessonNames[col].toString().trim() : "";
+    if (lessonName && lessonName.toUpperCase().startsWith("UFLI")) {
+      lessonColumnMap[col] = lessonName;
+    }
+  }
+
+  const lessonCount = Object.keys(lessonColumnMap).length;
+  Logger.log(`processPacing_SCClassroom: Found ${lessonCount} lessons`);
+
+  // Count students and build pacing data
+  let studentCount = 0;
+  let dash = {
+    assigned: lessonCount,
+    tracked: 0,
+    pass: 0,
+    fail: 0,
+    absent: 0,
+    lastEntry: null,
+    highestLessonName: ""
+  };
+  let dashHighestNum = 0;
+
+  // Students start 2 rows after header (header row + lesson name row + 1)
+  const studentStartRow = lessonNameRowIndex + 1;
+
+  for (let i = studentStartRow; i < sheetData.length; i++) {
+    const studentName = sheetData[i][0] ? sheetData[i][0].toString().trim() : "";
+    if (!studentName) continue; // Skip empty rows
+
+    studentCount++;
+
+    // Process each lesson for this student
+    for (const colStr in lessonColumnMap) {
+      const col = parseInt(colStr);
+      const lessonName = lessonColumnMap[col];
+      const cellValue = sheetData[i][col] ? sheetData[i][col].toString().trim().toUpperCase() : "";
+
+      if (cellValue === "Y") {
+        dash.pass++;
+        dash.tracked++;
+
+        // Track highest lesson
+        const lessonNum = extractLessonNumber(lessonName);
+        if (lessonNum && lessonNum > dashHighestNum) {
+          dashHighestNum = lessonNum;
+          dash.highestLessonName = lessonName;
+        }
+      } else if (cellValue === "N") {
+        dash.fail++;
+        dash.tracked++;
+      } else if (cellValue === "A") {
+        dash.absent++;
+        dash.tracked++;
+      }
+    }
+  }
+
+  Logger.log(`processPacing_SCClassroom: Found ${studentCount} students`);
+
+  // Get teacher from lookups or default
+  const teacher = teacherByGroup.get(groupName) || "SC Teacher";
+
+  // Override student count from lookups if available
+  const lookupCount = studentCountByGroup.get(groupName);
+  if (lookupCount) {
+    studentCount = lookupCount;
+  }
+
+  // Add dashboard row for SC Classroom
+  if (studentCount > 0) {
+    dashboardRows.push(buildDashboardRow(groupName, teacher, studentCount, dash));
+
+    // Add log rows for each lesson
+    for (const colStr in lessonColumnMap) {
+      const col = parseInt(colStr);
+      const lessonName = lessonColumnMap[col];
+      const lessonNum = extractLessonNumber(lessonName);
+
+      // Get stats from progress map
+      const stats = progressMap.get(`${groupName}|${lessonNum}`);
+      let log_Y = 0, log_N = 0, log_A = 0, log_Date = null;
+
+      if (stats) {
+        log_Y = stats.Y || 0;
+        log_N = stats.N || 0;
+        log_A = stats.A || 0;
+        log_Date = stats.lastDate || null;
+      }
+
+      const total = log_Y + log_N;
+      logRows.push([
+        groupName, teacher, `Lesson ${col - 1}`, lessonName,
+        studentCount, log_Y, log_N, log_A,
+        total > 0 ? log_Y / total : 0,
+        total > 0 ? log_N / total : 0,
+        studentCount > 0 ? log_A / studentCount : 0,
+        log_Date
+      ]);
+    }
   }
 }
 
