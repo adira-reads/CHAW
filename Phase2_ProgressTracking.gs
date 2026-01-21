@@ -1117,7 +1117,15 @@ function updatePacingReports() {
   
   const lookups = buildStudentLookups();
   const progressMap = buildProgressHistory(progressSheet);
- const { dashboardRows, logRows } = scanGradeSheetsForPacing(ss, lookups, progressMap);
+
+  // Use mixed-grade scanner if enabled, otherwise use standard scanner
+  let dashboardRows, logRows;
+  if (typeof ENABLE_MIXED_GRADES !== 'undefined' && ENABLE_MIXED_GRADES && typeof scanGradeSheetsForPacing_MixedGrade === 'function') {
+    Logger.log('updatePacingReports: Using mixed-grade scanner');
+    ({ dashboardRows, logRows } = scanGradeSheetsForPacing_MixedGrade(ss, lookups, progressMap));
+  } else {
+    ({ dashboardRows, logRows } = scanGradeSheetsForPacing(ss, lookups, progressMap));
+  }
   
   writeDataToSheet(ss, SHEET_NAMES_PACING.DASHBOARD, dashboardRows, 6);
   writeDataToSheet(ss, SHEET_NAMES_PACING.LOG, logRows, 6);
@@ -1584,6 +1592,16 @@ function syncSmallGroupProgress() {
 
   // First, scan progress data to find which grades/sheets are actually needed
   const neededSheets = new Set();
+
+  // For mixed-grade sites, add all configured mixed-grade sheets
+  if (typeof ENABLE_MIXED_GRADES !== 'undefined' && ENABLE_MIXED_GRADES && typeof MIXED_GRADE_CONFIG !== 'undefined') {
+    for (const sheetName of Object.keys(MIXED_GRADE_CONFIG)) {
+      neededSheets.add(sheetName);
+    }
+    Logger.log('syncSmallGroupProgress: Mixed grades enabled, added sheets: ' + Array.from(neededSheets).join(', '));
+  }
+
+  // Also check progress data for standard grade-based sheets
   progressData.forEach(row => {
     const groupName = row[2];
     if (groupName) {
@@ -1591,15 +1609,6 @@ function syncSmallGroupProgress() {
       const gradeMatch = groupName.toString().match(/^(PreK|KG|G[1-8])/);
       if (gradeMatch) {
         neededSheets.add(gradeMatch[1] + ' Groups');
-      }
-      // Check if it's a mixed-grade group
-      if (typeof ENABLE_MIXED_GRADES !== 'undefined' && ENABLE_MIXED_GRADES && typeof MIXED_GRADE_CONFIG !== 'undefined') {
-        for (const sheetName of Object.keys(MIXED_GRADE_CONFIG)) {
-          const config = MIXED_GRADE_CONFIG[sheetName];
-          if (config.groups && config.groups.some(g => groupName.toString().includes(g))) {
-            neededSheets.add(sheetName);
-          }
-        }
       }
     }
   });
