@@ -2181,9 +2181,15 @@ function updateSchoolSummary() {
 
   // 6. MIXED GRADE TABLE
   if (typeof ENABLE_MIXED_GRADES !== 'undefined' && ENABLE_MIXED_GRADES) {
+    log(functionName, 'Mixed grades enabled, checking for renderMixedGradeGroupTable...');
     if (typeof renderMixedGradeGroupTable === 'function') {
+      log(functionName, `Calling renderMixedGradeGroupTable with ${pacingData.length} pacing rows`);
       currentRow = renderMixedGradeGroupTable(summarySheet, currentRow, pacingData);
+    } else {
+      log(functionName, 'WARNING: renderMixedGradeGroupTable function not found!', 'WARN');
     }
+  } else {
+    log(functionName, 'Mixed grades not enabled, skipping Group Performance table');
   }
   
   summarySheet.setFrozenRows(4);

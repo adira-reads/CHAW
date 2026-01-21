@@ -1762,6 +1762,8 @@ function applySchoolSummaryFormatting_MixedGrade(sheet, gradeCount) {
  * Shows all groups regardless of grade, at the bottom of School Summary
  */
 function renderMixedGradeGroupTable(sheet, row, pacingData) {
+  Logger.log('[renderMixedGradeGroupTable] Starting at row ' + row + ' with ' + pacingData.length + ' pacing entries');
+
   // Section label
   sheet.getRange(row, 1).setValue("✅ Group Performance")
     .setFontWeight("bold")
@@ -1837,23 +1839,25 @@ function renderMixedGradeGroupTable(sheet, row, pacingData) {
     return a.groupName.localeCompare(b.groupName);
   });
   
+  Logger.log('[renderMixedGradeGroupTable] Found ' + tableData.length + ' groups to display');
+
   // Write table data
   if (tableData.length > 0) {
     const rows = tableData.map(item => item.data);
-    
+
     sheet.getRange(row, 1, rows.length, 7).setValues(rows)
       .setFontSize(10)
       .setVerticalAlignment("middle");
-    
+
     // Format Students column as number (column 3)
     sheet.getRange(row, 3, rows.length, 1).setNumberFormat("0");
-    
+
     // Format percentage columns (Pacing, Pass Rate, Absent Rate - columns 4, 5, 6)
     sheet.getRange(row, 4, rows.length, 3).setNumberFormat("0%");
-    
+
     // Center align numeric columns (columns 3-6)
     sheet.getRange(row, 3, rows.length, 4).setHorizontalAlignment("center");
-    
+
     // Alternating row colors
     for (let i = 0; i < rows.length; i++) {
       if (i % 2 === 1) {
@@ -1861,8 +1865,14 @@ function renderMixedGradeGroupTable(sheet, row, pacingData) {
       }
       sheet.setRowHeight(row + i, 24);
     }
-    
+
     row += rows.length;
+  } else {
+    // No data yet - show informative message
+    sheet.getRange(row, 1).setValue("No group data available yet. Submit lesson data to populate this table.")
+      .setFontStyle("italic")
+      .setFontColor("#666666");
+    row++;
   }
   
   // Flags summary if any (no merge)
