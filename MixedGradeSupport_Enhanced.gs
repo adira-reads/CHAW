@@ -412,9 +412,100 @@ function getGroupsForForm_MixedGrade() {
 }
 
 /**
+ * Gets the grade(s) for a group from Group Configuration sheet
+ * @param {string} groupName - Group name to look up
+ * @returns {string|null} Grade(s) string or null if not found
+ */
+function getGradeForGroup(groupName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const groupConfigSheet = ss.getSheetByName("Group Configuration");
+
+  if (!groupConfigSheet) {
+    Logger.log("getGradeForGroup: Group Configuration sheet not found");
+    return null;
+  }
+
+  const lastRow = groupConfigSheet.getLastRow();
+  const GROUP_DATA_START = 8;
+
+  if (lastRow < GROUP_DATA_START) return null;
+
+  // Columns: A=Group Name, B=Grade
+  const configData = groupConfigSheet.getRange(GROUP_DATA_START, 1, lastRow - GROUP_DATA_START + 1, 2).getValues();
+
+  for (const row of configData) {
+    const name = row[0] ? row[0].toString().trim() : "";
+    const grade = row[1] ? row[1].toString().trim() : "";
+
+    if (name === groupName) {
+      Logger.log("getGradeForGroup: Found grade '" + grade + "' for group '" + groupName + "'");
+      return grade;
+    }
+  }
+
+  Logger.log("getGradeForGroup: Group '" + groupName + "' not found in Group Configuration");
+  return null;
+}
+
+/**
+ * Determines if a group belongs to the G6-G8 mixed grade sheet based on its grade
+ * @param {string} groupName - Group name to check
+ * @returns {boolean} True if group is G6, G7, or G8
+ */
+function isG6ToG8Group(groupName) {
+  // First check if the name contains "G6 to G8"
+  if (groupName.includes("G6 to G8")) {
+    return true;
+  }
+
+  // Check Group Configuration for the grade
+  const grade = getGradeForGroup(groupName);
+  if (grade) {
+    // Check if any of the grades in the comma-separated list is G6, G7, or G8
+    const grades = grade.split(",").map(g => g.trim());
+    return grades.some(g => ["G6", "G7", "G8"].includes(g));
+  }
+
+  return false;
+}
+
+/**
+ * Determines if a group belongs to the SC Classroom sheet based on its grade
+ * @param {string} groupName - Group name to check
+ * @returns {boolean} True if group is in SC Classroom (G1-G4)
+ */
+function isSCClassroomGroup(groupName) {
+  // Check if it's the SC Classroom group itself
+  if (groupName === "SC Classroom") {
+    return true;
+  }
+
+  // Check Group Configuration for the grade
+  const grade = getGradeForGroup(groupName);
+  if (grade) {
+    // SC Classroom typically has G1-G4 students
+    // But we should only return true if the group is actually IN SC Classroom sheet
+    // Check if the group exists in the SC Classroom sheet
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const scSheet = ss.getSheetByName("SC Classroom");
+    if (scSheet) {
+      const data = scSheet.getDataRange().getValues();
+      for (let i = 0; i < data.length; i++) {
+        const cellA = data[i][0] ? data[i][0].toString().trim() : "";
+        if (cellA === groupName) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * REPLACEMENT for getLessonsAndStudentsForGroup() in GPSetUpWizard.gs
  * Gets lessons and students for a group
- * 
+ *
  * @param {string} groupName - Group name (e.g., "1 - T. Jones", "KG Group 1")
  * @returns {Object} {lessons: [{id, name}], students: [names]}
  */
@@ -434,9 +525,16 @@ function getLessonsAndStudentsForGroup_MixedGrade(groupName) {
     return getLessonsAndStudentsForSCClassroom();
   }
 
-  // Handle G6 to G8 groups specially
-  if (groupName.includes("G6 to G8")) {
+  // Check if this is a G6 to G8 group (by name OR by grade from Group Configuration)
+  if (isG6ToG8Group(groupName)) {
+    Logger.log("Group '" + groupName + "' identified as G6 to G8 group");
     return getLessonsAndStudentsForMixedGradeGroup(groupName, "G6 to G8 Groups");
+  }
+
+  // Check if this group is in SC Classroom sheet
+  if (isSCClassroomGroup(groupName)) {
+    Logger.log("Group '" + groupName + "' identified as SC Classroom group");
+    return getLessonsAndStudentsForSCClassroomGroup(groupName);
   }
 
   // Find which sheet contains this group
@@ -466,6 +564,16 @@ function getLessonsAndStudentsForGroup_MixedGrade(groupName) {
 /**
  * Gets lessons and students for SC Classroom (flat structure)
  * SC Classroom has all students in one sheet without sub-groups
+ *
+ * Handles multiple possible structures:
+ * Structure A (flat with UFLI in header):
+ *   Row N: "Student Name" | "Grade" | "UFLI L1" | "UFLI L2" | ...
+ *   Row N+1: Student | G1 | Y/N | Y/N | ...
+ *
+ * Structure B (with sub-header):
+ *   Row N: "Student Name" | "Lesson 1" | "Lesson 2" | ...
+ *   Row N+1: [empty/grade] | "UFLI L1" | "UFLI L2" | ...
+ *   Row N+2: Student | Y/N | Y/N | ...
  */
 function getLessonsAndStudentsForSCClassroom() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -478,7 +586,7 @@ function getLessonsAndStudentsForSCClassroom() {
 
   const data = sheet.getDataRange().getValues();
   const students = [];
-  const lessons = [];
+  let lessons = [];
 
   // Find the "Student Name" header row
   let headerRowIndex = -1;
@@ -494,25 +602,59 @@ function getLessonsAndStudentsForSCClassroom() {
     return { error: "Could not find header row in SC Classroom sheet." };
   }
 
-  // Lesson names are in the row after header (columns C onwards)
-  const lessonNameRowIndex = headerRowIndex + 1;
-  if (lessonNameRowIndex < data.length) {
-    const lessonRow = data[lessonNameRowIndex];
-    for (let col = 2; col < lessonRow.length; col++) {
-      const lessonName = lessonRow[col] ? lessonRow[col].toString().trim() : "";
-      if (lessonName && lessonName.toUpperCase().startsWith("UFLI")) {
-        lessons.push({ id: col, name: lessonName });
+  Logger.log("SC Classroom: Found 'Student Name' header at row " + (headerRowIndex + 1));
+
+  // Try to find UFLI lessons in the header row first (columns B/C onwards)
+  const headerRow = data[headerRowIndex];
+  for (let col = 1; col < headerRow.length; col++) {
+    const cellValue = headerRow[col] ? headerRow[col].toString().trim() : "";
+    if (cellValue && cellValue.toUpperCase().startsWith("UFLI")) {
+      lessons.push({ id: col, name: cellValue });
+    }
+  }
+
+  // If no UFLI lessons found in header row, check sub-header row
+  if (lessons.length === 0 && headerRowIndex + 1 < data.length) {
+    Logger.log("SC Classroom: No UFLI lessons in header row, checking sub-header row");
+    const subHeaderRow = data[headerRowIndex + 1];
+    for (let col = 1; col < subHeaderRow.length; col++) {
+      const cellValue = subHeaderRow[col] ? subHeaderRow[col].toString().trim() : "";
+      if (cellValue && cellValue.toUpperCase().startsWith("UFLI")) {
+        lessons.push({ id: col, name: cellValue });
       }
     }
   }
 
   Logger.log("SC Classroom: Found " + lessons.length + " lessons");
 
-  // Students start 2 rows after header
-  const studentStartRow = lessonNameRowIndex + 1;
+  // Determine where students start
+  // If lessons were in sub-header row, students start at headerRowIndex + 2
+  // If lessons were in header row, students start at headerRowIndex + 1
+  let studentStartRow = headerRowIndex + 1;
+
+  // Check if the first data row has student names or is a sub-header
+  if (studentStartRow < data.length) {
+    const firstDataRow = data[studentStartRow];
+    const firstCell = firstDataRow[0] ? firstDataRow[0].toString().trim() : "";
+
+    // If the first cell is empty or looks like a sub-header, skip this row
+    if (!firstCell || firstCell === "Grade" || firstCell === "") {
+      // Check if this row has UFLI lesson names (sub-header row)
+      const hasUFLI = firstDataRow.some((cell, idx) =>
+        idx > 0 && cell && cell.toString().trim().toUpperCase().startsWith("UFLI")
+      );
+      if (hasUFLI) {
+        studentStartRow++;
+        Logger.log("SC Classroom: Skipping sub-header row, students start at row " + (studentStartRow + 1));
+      }
+    }
+  }
+
+  // Collect students
   for (let i = studentStartRow; i < data.length; i++) {
     const studentName = data[i][0] ? data[i][0].toString().trim() : "";
-    if (studentName) {
+    // Skip empty rows and header-like rows
+    if (studentName && studentName !== "Student Name" && studentName !== "Grade") {
       students.push(studentName);
     }
   }
@@ -523,6 +665,25 @@ function getLessonsAndStudentsForSCClassroom() {
     lessons: lessons,
     students: students.sort()
   };
+}
+
+/**
+ * Gets lessons and students for a specific group within SC Classroom sheet
+ * Used when SC Classroom has sub-groups (not flat structure)
+ */
+function getLessonsAndStudentsForSCClassroomGroup(groupName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("SC Classroom");
+
+  if (!sheet) {
+    Logger.log("SC Classroom sheet not found");
+    return { error: "SC Classroom sheet not found." };
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  // Try STANDARD format first (group headers in column A)
+  return getLessonsAndStudents_Standard(data, groupName);
 }
 
 /**
