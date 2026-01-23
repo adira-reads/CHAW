@@ -109,13 +109,27 @@ function getSheetNameForGrade(grade) {
 /**
  * Gets the sheet name for a given group name
  * This is the KEY function for mixed-grade support
- * 
+ *
  * @param {string} groupName - Full group name (e.g., "1 - T. Jones", "KG Group 1")
  * @returns {string|null} Sheet name or null if not found
  */
 function getSheetNameForGroup(groupName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
+
+  // Special case: SC Classroom is both the sheet name and group name
+  if (groupName === "SC Classroom") {
+    const scSheet = ss.getSheetByName("SC Classroom");
+    if (scSheet) return "SC Classroom";
+  }
+
+  // Special case: G6 to G8 groups
+  if (groupName.includes("G6 to G8")) {
+    const mixedSheet = ss.getSheetByName("G6 to G8 Groups");
+    if (mixedSheet) return "G6 to G8 Groups";
+    // If no dedicated sheet, these groups might be in individual grade sheets
+    // The fallback below will handle it
+  }
+
   if (!ENABLE_MIXED_GRADES) {
     // Standard single-grade logic
     const gradeMatch = groupName.match(/^(PreK|KG|G[1-8])/);
@@ -124,14 +138,14 @@ function getSheetNameForGroup(groupName) {
     }
     return null;
   }
-  
+
   // Mixed-grade logic: Scan all mixed-grade sheets to find the group
   for (const sheetName of Object.keys(MIXED_GRADE_CONFIG)) {
     const sheet = ss.getSheetByName(sheetName);
     if (!sheet) continue;
-    
+
     const data = sheet.getDataRange().getValues();
-    
+
     if (SHEET_FORMAT === "SANKOFA") {
       // Sankofa format: Look for group name in column D (NEW_GROUP column)
       for (let i = 0; i < data.length; i++) {
@@ -150,14 +164,28 @@ function getSheetNameForGroup(groupName) {
       }
     }
   }
-  
+
   // Fallback: Try standard pattern
   const gradeMatch = groupName.match(/^(PreK|KG|G[1-8])/);
   if (gradeMatch) {
     const standardSheet = ss.getSheetByName(gradeMatch[1] + " Groups");
     if (standardSheet) return gradeMatch[1] + " Groups";
   }
-  
+
+  // Last resort: Search ALL sheets for the group
+  const standardPattern = /^(PreK|KG|G[1-8]) Groups$/;
+  const allSheets = ss.getSheets().filter(s => standardPattern.test(s.getName()));
+
+  for (const sheet of allSheets) {
+    const data = sheet.getDataRange().getValues();
+    for (let i = 0; i < data.length; i++) {
+      const cellA = data[i][0] ? data[i][0].toString().trim() : "";
+      if (cellA === groupName && isGroupHeader_Standard(cellA, data, i)) {
+        return sheet.getName();
+      }
+    }
+  }
+
   return null;
 }
 
@@ -224,23 +252,55 @@ function getGroupFromSankofaRow(data, rowIndex) {
 /**
  * REPLACEMENT for getGroupsForForm() in GPSetUpWizard.gs
  * Gets all groups for the lesson entry form dropdown
- * 
+ *
  * @returns {Array<string>} Sorted array of group names
  */
 function getGroupsForForm_MixedGrade() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const allGroupNames = [];
-  
+
+  // === FIRST: Read groups from Group Configuration sheet (most reliable source) ===
+  const groupConfigSheet = ss.getSheetByName("Group Configuration");
+  if (groupConfigSheet) {
+    const configData = groupConfigSheet.getDataRange().getValues();
+    // Find where group data starts (after headers)
+    // Group Configuration structure: Row 5 = headers, Row 6 = totals, Row 7 = blank, Row 8+ = groups
+    // Or: Look for "Group Name" header
+    let dataStartRow = 7; // Default: skip first 7 rows
+
+    for (let i = 0; i < Math.min(10, configData.length); i++) {
+      if (configData[i][0] && configData[i][0].toString().trim() === "Group Name") {
+        dataStartRow = i + 1; // Data starts after header
+        break;
+      }
+    }
+
+    // Read all group names from column A
+    for (let i = dataStartRow; i < configData.length; i++) {
+      const groupName = configData[i][0] ? configData[i][0].toString().trim() : "";
+      // Skip empty rows and totals row
+      if (groupName && groupName !== "Total Groups" && !groupName.includes("Not Grouped")) {
+        if (!allGroupNames.includes(groupName)) {
+          allGroupNames.push(groupName);
+          Logger.log("Found group from config: " + groupName);
+        }
+      }
+    }
+
+    Logger.log("Loaded " + allGroupNames.length + " groups from Group Configuration");
+  }
+
+  // === THEN: Also scan group sheets for any additional groups ===
   // Determine which sheets to scan
   const sheetsToScan = [];
-  
+
   if (ENABLE_MIXED_GRADES) {
     for (const sheetName of Object.keys(MIXED_GRADE_CONFIG)) {
       const sheet = ss.getSheetByName(sheetName);
       if (sheet) sheetsToScan.push(sheet);
     }
   }
-  
+
   // Also check standard grade sheets
   const standardPattern = /^(PreK|KG|G[1-8]) Groups$/;
   ss.getSheets().forEach(sheet => {
@@ -250,7 +310,7 @@ function getGroupsForForm_MixedGrade() {
       }
     }
   });
-  
+
   // Scan each sheet for groups
   sheetsToScan.forEach(sheet => {
     const sheetName = sheet.getName();
@@ -360,37 +420,153 @@ function getGroupsForForm_MixedGrade() {
  */
 function getLessonsAndStudentsForGroup_MixedGrade(groupName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
+
   Logger.log("=== getLessonsAndStudentsForGroup_MixedGrade ===");
   Logger.log("Group requested: " + groupName);
-  
+
   // Handle PreK separately
   if (groupName.toLowerCase().includes("prek")) {
     return getLessonsAndStudentsForPreKGroup(groupName);
   }
-  
+
+  // Handle SC Classroom specially (flat structure - no sub-groups)
+  if (groupName === "SC Classroom") {
+    return getLessonsAndStudentsForSCClassroom();
+  }
+
+  // Handle G6 to G8 groups specially
+  if (groupName.includes("G6 to G8")) {
+    return getLessonsAndStudentsForMixedGradeGroup(groupName, "G6 to G8 Groups");
+  }
+
   // Find which sheet contains this group
   const sheetName = getSheetNameForGroup(groupName);
-  
+
   if (!sheetName) {
     Logger.log("ERROR: Could not find sheet for group: " + groupName);
     return { error: "Could not find sheet for group '" + groupName + "'" };
   }
-  
+
   Logger.log("Found sheet: " + sheetName);
-  
+
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     return { error: "Sheet '" + sheetName + "' not found." };
   }
-  
+
   const data = sheet.getDataRange().getValues();
-  
+
   if (SHEET_FORMAT === "SANKOFA") {
     return getLessonsAndStudents_Sankofa(data, groupName);
   } else {
     return getLessonsAndStudents_Standard(data, groupName);
   }
+}
+
+/**
+ * Gets lessons and students for SC Classroom (flat structure)
+ * SC Classroom has all students in one sheet without sub-groups
+ */
+function getLessonsAndStudentsForSCClassroom() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("SC Classroom");
+
+  if (!sheet) {
+    Logger.log("SC Classroom sheet not found");
+    return { error: "SC Classroom sheet not found." };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const students = [];
+  const lessons = [];
+
+  // Find the "Student Name" header row
+  let headerRowIndex = -1;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][0] && data[i][0].toString().trim() === "Student Name") {
+      headerRowIndex = i;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    Logger.log('SC Classroom: Could not find "Student Name" header');
+    return { error: "Could not find header row in SC Classroom sheet." };
+  }
+
+  // Lesson names are in the row after header (columns C onwards)
+  const lessonNameRowIndex = headerRowIndex + 1;
+  if (lessonNameRowIndex < data.length) {
+    const lessonRow = data[lessonNameRowIndex];
+    for (let col = 2; col < lessonRow.length; col++) {
+      const lessonName = lessonRow[col] ? lessonRow[col].toString().trim() : "";
+      if (lessonName && lessonName.toUpperCase().startsWith("UFLI")) {
+        lessons.push({ id: col, name: lessonName });
+      }
+    }
+  }
+
+  Logger.log("SC Classroom: Found " + lessons.length + " lessons");
+
+  // Students start 2 rows after header
+  const studentStartRow = lessonNameRowIndex + 1;
+  for (let i = studentStartRow; i < data.length; i++) {
+    const studentName = data[i][0] ? data[i][0].toString().trim() : "";
+    if (studentName) {
+      students.push(studentName);
+    }
+  }
+
+  Logger.log("SC Classroom: Found " + students.length + " students");
+
+  return {
+    lessons: lessons,
+    students: students.sort()
+  };
+}
+
+/**
+ * Gets lessons and students for mixed-grade groups (G6 to G8, etc.)
+ */
+function getLessonsAndStudentsForMixedGradeGroup(groupName, sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    Logger.log("Mixed grade sheet not found: " + sheetName);
+    // Try to find the group in standard grade sheets
+    return getLessonsAndStudentsFromGradeSheets(groupName);
+  }
+
+  const data = sheet.getDataRange().getValues();
+  return getLessonsAndStudents_Standard(data, groupName);
+}
+
+/**
+ * Searches all grade sheets to find a group's lessons and students
+ */
+function getLessonsAndStudentsFromGradeSheets(groupName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const standardPattern = /^(PreK|KG|G[1-8]) Groups$/;
+
+  // Search all grade sheets
+  const sheets = ss.getSheets().filter(s => standardPattern.test(s.getName()));
+
+  for (const sheet of sheets) {
+    const data = sheet.getDataRange().getValues();
+
+    // Look for the group in this sheet
+    for (let i = 0; i < data.length; i++) {
+      const cellA = data[i][0] ? data[i][0].toString().trim() : "";
+      if (cellA === groupName && isGroupHeader_Standard(cellA, data, i)) {
+        Logger.log("Found group '" + groupName + "' in sheet: " + sheet.getName());
+        return getLessonsAndStudents_Standard(data, groupName);
+      }
+    }
+  }
+
+  Logger.log("Could not find group '" + groupName + "' in any grade sheet");
+  return { error: "Could not find group '" + groupName + "' in any sheet." };
 }
 
 /**
