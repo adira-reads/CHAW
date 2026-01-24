@@ -1,0 +1,20 @@
+run = "cd /home/user/CHAW/replit-app && uvicorn main:app --host 0.0.0.0 --port 8080 --reload"
+entrypoint = "main.py"
+
+[nix]
+channel = "stable-23_11"
+
+[env]
+PYTHONPATH = "/home/user/CHAW/replit-app"
+
+[deployment]
+run = ["sh", "-c", "cd /home/user/CHAW/replit-app && alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8080"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[[ports]]
+localPort = 5173
+externalPort = 3000
