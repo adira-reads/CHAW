@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+}
+
+/* Custom component styles */
+@layer components {
+  .btn-primary {
+    @apply bg-ufli-primary text-white px-4 py-2 rounded-lg font-medium
+           hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500
+           focus:ring-offset-2 transition-colors;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium
+           hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500
+           focus:ring-offset-2 transition-colors;
+  }
+
+  .input-field {
+    @apply block w-full rounded-lg border border-gray-300 px-3 py-2
+           shadow-sm focus:border-ufli-primary focus:outline-none
+           focus:ring-1 focus:ring-ufli-primary;
+  }
+
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
+  }
+
+  /* Status badge styles */
+  .status-y {
+    @apply bg-status-passed text-white;
+  }
+
+  .status-n {
+    @apply bg-status-failed text-white;
+  }
+
+  .status-a {
+    @apply bg-status-absent text-white;
+  }
+
+  .status-u {
+    @apply bg-status-unenrolled text-white;
+  }
+}
