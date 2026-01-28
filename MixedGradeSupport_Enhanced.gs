@@ -502,12 +502,163 @@ function isSCClassroomGroup(groupName) {
   return false;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CO-TEACHING SUPPORT FUNCTIONS
+// Enables two groups to be combined for instruction while tracking separately
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Gets the partner group for co-teaching from Group Configuration sheet
+ *
+ * Group Configuration sheet structure:
+ * - Column A: Group Name
+ * - Column B: Grade
+ * - Column C: Partner Group (NEW - for co-teaching)
+ *
+ * @param {string} groupName - Group name to look up
+ * @returns {string|null} Partner group name or null if solo teaching
+ */
+function getPartnerGroup(groupName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const groupConfigSheet = ss.getSheetByName("Group Configuration");
+
+  if (!groupConfigSheet) {
+    Logger.log("getPartnerGroup: Group Configuration sheet not found");
+    return null;
+  }
+
+  const lastRow = groupConfigSheet.getLastRow();
+  const GROUP_DATA_START = 8;
+
+  if (lastRow < GROUP_DATA_START) return null;
+
+  // Columns: A=Group Name, B=Grade, C=Partner Group
+  const numCols = Math.min(groupConfigSheet.getLastColumn(), 3);
+  if (numCols < 3) {
+    // Partner Group column doesn't exist yet
+    Logger.log("getPartnerGroup: Partner Group column (C) not found - co-teaching not configured");
+    return null;
+  }
+
+  const configData = groupConfigSheet.getRange(GROUP_DATA_START, 1, lastRow - GROUP_DATA_START + 1, 3).getValues();
+
+  for (const row of configData) {
+    const name = row[0] ? row[0].toString().trim() : "";
+    const partnerGroup = row[2] ? row[2].toString().trim() : "";
+
+    if (name === groupName && partnerGroup) {
+      Logger.log("getPartnerGroup: Found partner '" + partnerGroup + "' for group '" + groupName + "'");
+      return partnerGroup;
+    }
+  }
+
+  Logger.log("getPartnerGroup: No partner found for group '" + groupName + "' (solo teaching)");
+  return null;
+}
+
+/**
+ * Determines if a group is part of a co-teaching pair
+ *
+ * @param {string} groupName - Group name to check
+ * @returns {boolean} True if group has a partner configured
+ */
+function isCoTeachingGroup(groupName) {
+  return getPartnerGroup(groupName) !== null;
+}
+
+/**
+ * Gets all co-teaching pairs from Group Configuration
+ *
+ * @returns {Array} Array of {group1, group2, grade} objects for each co-teaching pair
+ */
+function getAllCoTeachingPairs() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const groupConfigSheet = ss.getSheetByName("Group Configuration");
+
+  if (!groupConfigSheet) return [];
+
+  const lastRow = groupConfigSheet.getLastRow();
+  const GROUP_DATA_START = 8;
+
+  if (lastRow < GROUP_DATA_START) return [];
+
+  const numCols = groupConfigSheet.getLastColumn();
+  if (numCols < 3) return []; // No Partner Group column
+
+  const configData = groupConfigSheet.getRange(GROUP_DATA_START, 1, lastRow - GROUP_DATA_START + 1, 3).getValues();
+
+  const pairs = [];
+  const processedGroups = new Set();
+
+  for (const row of configData) {
+    const groupName = row[0] ? row[0].toString().trim() : "";
+    const grade = row[1] ? row[1].toString().trim() : "";
+    const partnerGroup = row[2] ? row[2].toString().trim() : "";
+
+    if (groupName && partnerGroup && !processedGroups.has(groupName)) {
+      pairs.push({
+        group1: groupName,
+        group2: partnerGroup,
+        grade: grade
+      });
+      // Mark both as processed to avoid duplicate pairs
+      processedGroups.add(groupName);
+      processedGroups.add(partnerGroup);
+    }
+  }
+
+  Logger.log("getAllCoTeachingPairs: Found " + pairs.length + " co-teaching pairs");
+  return pairs;
+}
+
+/**
+ * Gets all solo (non-co-teaching) groups from Group Configuration
+ *
+ * @returns {Array} Array of {groupName, grade} objects for solo groups
+ */
+function getAllSoloGroups() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const groupConfigSheet = ss.getSheetByName("Group Configuration");
+
+  if (!groupConfigSheet) return [];
+
+  const lastRow = groupConfigSheet.getLastRow();
+  const GROUP_DATA_START = 8;
+
+  if (lastRow < GROUP_DATA_START) return [];
+
+  const numCols = groupConfigSheet.getLastColumn();
+  const configData = groupConfigSheet.getRange(GROUP_DATA_START, 1, lastRow - GROUP_DATA_START + 1, Math.max(numCols, 3)).getValues();
+
+  const soloGroups = [];
+
+  for (const row of configData) {
+    const groupName = row[0] ? row[0].toString().trim() : "";
+    const grade = row[1] ? row[1].toString().trim() : "";
+    const partnerGroup = row[2] ? row[2].toString().trim() : "";
+
+    if (groupName && !partnerGroup) {
+      soloGroups.push({
+        groupName: groupName,
+        grade: grade
+      });
+    }
+  }
+
+  Logger.log("getAllSoloGroups: Found " + soloGroups.length + " solo groups");
+  return soloGroups;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LESSON AND STUDENT RETRIEVAL
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
  * REPLACEMENT for getLessonsAndStudentsForGroup() in GPSetUpWizard.gs
- * Gets lessons and students for a group
+ * Gets lessons and students for a group (with co-teaching support)
  *
  * @param {string} groupName - Group name (e.g., "1 - T. Jones", "KG Group 1")
- * @returns {Object} {lessons: [{id, name}], students: [names]}
+ * @returns {Object} {lessons: [{id, name}], students: [{name, sourceGroup}], isCoTeaching, partnerGroup}
  */
 function getLessonsAndStudentsForGroup_MixedGrade(groupName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -523,6 +674,15 @@ function getLessonsAndStudentsForGroup_MixedGrade(groupName) {
   // Handle SC Classroom specially (flat structure - no sub-groups)
   if (groupName === "SC Classroom") {
     return getLessonsAndStudentsForSCClassroom();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CO-TEACHING CHECK - Combine students from partner groups
+  // ═══════════════════════════════════════════════════════════════════════════
+  const partnerGroup = getPartnerGroup(groupName);
+  if (partnerGroup) {
+    Logger.log("Co-teaching detected: '" + groupName + "' paired with '" + partnerGroup + "'");
+    return getLessonsAndStudentsForCoTeachingGroup(groupName, partnerGroup);
   }
 
   // Check if this is a G6 to G8 group (by name OR by grade from Group Configuration)
@@ -546,6 +706,123 @@ function getLessonsAndStudentsForGroup_MixedGrade(groupName) {
   }
 
   Logger.log("Found sheet: " + sheetName);
+
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    return { error: "Sheet '" + sheetName + "' not found." };
+  }
+
+  const data = sheet.getDataRange().getValues();
+
+  if (SHEET_FORMAT === "SANKOFA") {
+    return getLessonsAndStudents_Sankofa(data, groupName);
+  } else {
+    return getLessonsAndStudents_Standard(data, groupName);
+  }
+}
+
+/**
+ * Gets lessons and students for a co-teaching group (combined from two groups)
+ *
+ * @param {string} primaryGroup - Primary group name selected by user
+ * @param {string} partnerGroup - Partner group name from configuration
+ * @returns {Object} {lessons, students (with sourceGroup), isCoTeaching, partnerGroup}
+ */
+function getLessonsAndStudentsForCoTeachingGroup(primaryGroup, partnerGroup) {
+  Logger.log("=== getLessonsAndStudentsForCoTeachingGroup ===");
+  Logger.log("Primary group: " + primaryGroup);
+  Logger.log("Partner group: " + partnerGroup);
+
+  // Get data for primary group (without triggering co-teaching recursion)
+  const primaryData = getStudentsForSingleGroup(primaryGroup);
+  const partnerData = getStudentsForSingleGroup(partnerGroup);
+
+  if (primaryData.error) {
+    Logger.log("Error getting primary group data: " + primaryData.error);
+    return primaryData;
+  }
+
+  if (partnerData.error) {
+    Logger.log("Warning: Error getting partner group data: " + partnerData.error);
+    // Continue with just primary group students
+  }
+
+  // Combine students with source group tracking
+  const combinedStudents = [];
+
+  // Add primary group students
+  if (primaryData.students) {
+    for (const student of primaryData.students) {
+      const studentName = typeof student === 'string' ? student : student.name;
+      combinedStudents.push({
+        name: studentName,
+        sourceGroup: primaryGroup
+      });
+    }
+  }
+
+  // Add partner group students
+  if (partnerData.students) {
+    for (const student of partnerData.students) {
+      const studentName = typeof student === 'string' ? student : student.name;
+      combinedStudents.push({
+        name: studentName,
+        sourceGroup: partnerGroup
+      });
+    }
+  }
+
+  Logger.log("Combined " + combinedStudents.length + " students from both groups");
+  Logger.log("  - Primary (" + primaryGroup + "): " + (primaryData.students ? primaryData.students.length : 0));
+  Logger.log("  - Partner (" + partnerGroup + "): " + (partnerData.students ? partnerData.students.length : 0));
+
+  return {
+    lessons: primaryData.lessons || [],
+    students: combinedStudents,
+    isCoTeaching: true,
+    primaryGroup: primaryGroup,
+    partnerGroup: partnerGroup
+  };
+}
+
+/**
+ * Gets students for a single group WITHOUT triggering co-teaching logic
+ * Used internally by getLessonsAndStudentsForCoTeachingGroup
+ *
+ * @param {string} groupName - Group name
+ * @returns {Object} {lessons, students}
+ */
+function getStudentsForSingleGroup(groupName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  Logger.log("getStudentsForSingleGroup: " + groupName);
+
+  // Handle PreK separately
+  if (groupName.toLowerCase().includes("prek")) {
+    return getLessonsAndStudentsForPreKGroup(groupName);
+  }
+
+  // Handle SC Classroom
+  if (groupName === "SC Classroom") {
+    return getLessonsAndStudentsForSCClassroom();
+  }
+
+  // Check if this group is in SC Classroom sheet
+  if (isSCClassroomGroup(groupName)) {
+    return getLessonsAndStudentsForSCClassroomGroup(groupName);
+  }
+
+  // Check if this is a G6 to G8 group
+  if (isG6ToG8Group(groupName)) {
+    return getLessonsAndStudentsForMixedGradeGroup(groupName, "G6 to G8 Groups");
+  }
+
+  // Find which sheet contains this group
+  const sheetName = getSheetNameForGroup(groupName);
+
+  if (!sheetName) {
+    return { error: "Could not find sheet for group '" + groupName + "'" };
+  }
 
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) {

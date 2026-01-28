@@ -1598,9 +1598,15 @@ function getExistingLessonData(gradeSheet, groupName, lessonName) {
 function saveLessonData(formData) {
   const functionName = 'saveLessonData';
   const startTime = new Date();
-  
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const { gradeSheet, groupName, lessonName, teacherName, studentStatuses, unenrolledStudents } = formData;
+
+  // Co-teaching support: extract co-teaching metadata
+  const isCoTeaching = formData.isCoTeaching || false;
+  const partnerGroup = formData.partnerGroup || null;
+  const primaryGroup = formData.primaryGroup || groupName;
+
   const grade = groupName.split(' ')[0];
 
   try {
@@ -1610,12 +1616,12 @@ function saveLessonData(formData) {
     if (grade === "PreK") {
       const sheet = ss.getSheetByName('Pre-K Data');
       if (!sheet) throw new Error("Sheet 'Pre-K Data' not found.");
-      
+
       const data = sheet.getDataRange().getValues();
       const headers = data[PREK_CONFIG.HEADER_ROW - 1];
       const colIndex = headers.indexOf(lessonName);
       if (colIndex === -1) throw new Error(`Column '${lessonName}' not found in Pre-K Data.`);
-      
+
       const activeStatuses = studentStatuses.filter(s => s.status !== 'U');
       activeStatuses.forEach(entry => {
         for (let i = PREK_CONFIG.DATA_START_ROW - 1; i < data.length; i++) {
@@ -1625,7 +1631,7 @@ function saveLessonData(formData) {
           }
         }
       });
-      
+
       if (unenrolledStudents && unenrolledStudents.length > 0) {
         logUnenrolledStudents(ss, groupName, lessonName, unenrolledStudents, new Date());
       }
@@ -1633,14 +1639,14 @@ function saveLessonData(formData) {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // K-8 FAST SAVE LOGIC (Optimized)
+    // K-8 FAST SAVE LOGIC (Optimized, with Co-Teaching Support)
     // ═══════════════════════════════════════════════════════════
     else {
       const progressSheet = ss.getSheetByName("Small Group Progress");
       const mapSheet = ss.getSheetByName("UFLI MAP");
-      
+
       if (!progressSheet) throw new Error('Small Group Progress sheet not found');
-      
+
       const timestamp = new Date();
       const activeStatuses = studentStatuses.filter(s => s.status !== 'U');
 
@@ -1651,38 +1657,79 @@ function saveLessonData(formData) {
         return { success: true, message: 'No active students to record.' };
       }
 
-      // STEP 1: Log to "Small Group Progress" (Fast)
-      const progressRows = activeStatuses.map(student => [
-        timestamp,
-        teacherName || 'Unknown',
-        groupName,
-        student.name,
-        lessonName,
-        student.status
-      ]);
-      progressSheet.getRange(progressSheet.getLastRow() + 1, 1, progressRows.length, 6).setValues(progressRows);
+      // ═══════════════════════════════════════════════════════════
+      // STEP 1: Log to "Small Group Progress" (with Source Group for co-teaching)
+      // ═══════════════════════════════════════════════════════════
+      const progressRows = activeStatuses.map(student => {
+        const sourceGroup = student.sourceGroup || groupName;
+        return [
+          timestamp,
+          teacherName || 'Unknown',
+          isCoTeaching ? primaryGroup : groupName,  // Teaching group (combined)
+          student.name,
+          lessonName,
+          student.status,
+          isCoTeaching ? sourceGroup : ''  // Source Group column (Column G) for co-teaching
+        ];
+      });
 
-      // STEP 2: Update Group Sheet (TARGETED BATCH)
-      // This is the CRITICAL part that replaces the slow sync
-      updateGroupSheetTargeted(ss, gradeSheet, groupName, lessonName, activeStatuses);
+      // Write to Small Group Progress (7 columns if co-teaching, 6 otherwise)
+      const numCols = isCoTeaching ? 7 : 6;
+      progressSheet.getRange(progressSheet.getLastRow() + 1, 1, progressRows.length, numCols).setValues(
+        isCoTeaching ? progressRows : progressRows.map(row => row.slice(0, 6))
+      );
 
-      // STEP 3: Update UFLI MAP (TARGETED BATCH)
+      if (isCoTeaching) {
+        Logger.log(`[${functionName}] Co-teaching mode: ${primaryGroup} + ${partnerGroup}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // STEP 2: Update Group Sheet(s) - Dual write for co-teaching
+      // ═══════════════════════════════════════════════════════════
+      if (isCoTeaching) {
+        // Group students by their source group
+        const studentsByGroup = {};
+        activeStatuses.forEach(student => {
+          const sourceGroup = student.sourceGroup || groupName;
+          if (!studentsByGroup[sourceGroup]) {
+            studentsByGroup[sourceGroup] = [];
+          }
+          studentsByGroup[sourceGroup].push(student);
+        });
+
+        // Update each source group's sheet separately
+        for (const [srcGroup, students] of Object.entries(studentsByGroup)) {
+          Logger.log(`[${functionName}] Updating group sheet for: ${srcGroup} (${students.length} students)`);
+          updateGroupSheetTargeted(ss, gradeSheet, srcGroup, lessonName, students);
+        }
+      } else {
+        // Standard single-group update
+        updateGroupSheetTargeted(ss, gradeSheet, groupName, lessonName, activeStatuses);
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // STEP 3: Update UFLI MAP (works by student name, handles co-teaching automatically)
+      // ═══════════════════════════════════════════════════════════
       const lessonNum = extractLessonNumber(lessonName);
       if (lessonNum && mapSheet) {
         updateUFLIMapTargeted(mapSheet, activeStatuses, lessonNum, timestamp);
       }
-      
+
+      // ═══════════════════════════════════════════════════════════
       // STEP 4: Log unenrolled
+      // ═══════════════════════════════════════════════════════════
       if (unenrolledStudents && unenrolledStudents.length > 0) {
         logUnenrolledStudents(ss, groupName, lessonName, unenrolledStudents, timestamp);
       }
 
       const elapsed = (new Date() - startTime) / 1000;
-      Logger.log(`[${functionName}] Fast Save Complete: ${elapsed.toFixed(2)}s`);
-      
-      return { 
-        success: true, 
-        message: `Saved successfully in ${elapsed.toFixed(1)}s`
+      Logger.log(`[${functionName}] ${isCoTeaching ? 'Co-Teaching ' : ''}Fast Save Complete: ${elapsed.toFixed(2)}s`);
+
+      return {
+        success: true,
+        message: isCoTeaching
+          ? `Co-teaching data saved for ${primaryGroup} + ${partnerGroup} in ${elapsed.toFixed(1)}s`
+          : `Saved successfully in ${elapsed.toFixed(1)}s`
       };
     }
 

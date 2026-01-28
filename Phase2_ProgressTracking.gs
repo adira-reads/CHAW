@@ -2760,12 +2760,12 @@ function getGradeCountsFromConfig(ss) {
     const lastRow = configSheet.getLastRow();
     if (lastRow >= 8) { // Data starts at row 8
       // Get Col B (Grade) and Col D (Count)
-      const data = configSheet.getRange(8, 2, lastRow - 7, 3).getValues(); 
-      
+      const data = configSheet.getRange(8, 2, lastRow - 7, 3).getValues();
+
       data.forEach(row => {
         const grade = row[0] ? row[0].toString().trim() : ""; // Col B
         const count = parseInt(row[2]) || 0; // Col D (Index 2 in this slice)
-        
+
         if (grade) {
           if (!counts[grade]) counts[grade] = 0;
           counts[grade] += count;
@@ -2774,4 +2774,256 @@ function getGradeCountsFromConfig(ss) {
     }
   }
   return counts;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CO-TEACHING COMPARISON REPORT
+// Compares pass rates and progress between co-teaching pairs and solo groups
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Generates a Co-Teaching Comparison Report
+ *
+ * Creates or updates a "Co-Teaching Report" sheet with:
+ * - Comparison of co-teaching pairs vs solo groups
+ * - Pass rate breakdown by original group within co-teaching pairs
+ * - Identification of structural weaknesses in teaching teams
+ */
+function generateCoTeachingReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  Logger.log("=== Generating Co-Teaching Comparison Report ===");
+
+  // Get co-teaching pairs and solo groups
+  const coTeachingPairs = getAllCoTeachingPairs();
+  const soloGroups = getAllSoloGroups();
+
+  if (coTeachingPairs.length === 0) {
+    ui.alert("No Co-Teaching Groups Found",
+      "No co-teaching pairs are configured in the Group Configuration sheet.\n\n" +
+      "To set up co-teaching:\n" +
+      "1. Add a 'Partner Group' column (Column C) to Group Configuration\n" +
+      "2. Enter the partner group name for each co-teaching pair",
+      ui.ButtonSet.OK);
+    return;
+  }
+
+  // Get or create the report sheet
+  let reportSheet = ss.getSheetByName("Co-Teaching Report");
+  if (!reportSheet) {
+    reportSheet = ss.insertSheet("Co-Teaching Report");
+  } else {
+    reportSheet.clear();
+  }
+
+  // Get data from Small Group Progress for pass rate calculations
+  const progressSheet = ss.getSheetByName("Small Group Progress");
+  const progressData = progressSheet ? progressSheet.getDataRange().getValues() : [];
+
+  // Calculate metrics for each group
+  const groupMetrics = calculateGroupMetrics(progressData);
+
+  // Build report
+  const reportData = [];
+
+  // Header section
+  reportData.push(["CO-TEACHING COMPARISON REPORT"]);
+  reportData.push(["Generated: " + new Date().toLocaleString()]);
+  reportData.push([""]);
+
+  // Summary section
+  reportData.push(["SUMMARY"]);
+  reportData.push(["Co-Teaching Pairs:", coTeachingPairs.length]);
+  reportData.push(["Solo Groups:", soloGroups.length]);
+  reportData.push([""]);
+
+  // Co-Teaching Pairs Detail
+  reportData.push(["CO-TEACHING PAIRS BREAKDOWN"]);
+  reportData.push(["Pair", "Group 1", "Group 1 Pass Rate", "Group 2", "Group 2 Pass Rate", "Combined Rate", "Difference"]);
+
+  let totalCoTeachingRate = 0;
+  let coTeachingPairCount = 0;
+
+  coTeachingPairs.forEach((pair, index) => {
+    const group1Metrics = groupMetrics[pair.group1] || { passRate: 0, totalEntries: 0 };
+    const group2Metrics = groupMetrics[pair.group2] || { passRate: 0, totalEntries: 0 };
+
+    const combinedPass = (group1Metrics.passCount || 0) + (group2Metrics.passCount || 0);
+    const combinedTotal = (group1Metrics.totalEntries || 0) + (group2Metrics.totalEntries || 0);
+    const combinedRate = combinedTotal > 0 ? (combinedPass / combinedTotal * 100) : 0;
+
+    const difference = Math.abs(group1Metrics.passRate - group2Metrics.passRate);
+
+    reportData.push([
+      `Pair ${index + 1}`,
+      pair.group1,
+      group1Metrics.passRate.toFixed(1) + "%",
+      pair.group2,
+      group2Metrics.passRate.toFixed(1) + "%",
+      combinedRate.toFixed(1) + "%",
+      difference.toFixed(1) + "%"
+    ]);
+
+    if (combinedTotal > 0) {
+      totalCoTeachingRate += combinedRate;
+      coTeachingPairCount++;
+    }
+  });
+
+  reportData.push([""]);
+
+  // Solo Groups Summary
+  reportData.push(["SOLO GROUPS SUMMARY"]);
+  reportData.push(["Group Name", "Grade", "Pass Rate", "Total Entries", "Pass Count"]);
+
+  let totalSoloRate = 0;
+  let soloGroupCount = 0;
+
+  soloGroups.forEach(group => {
+    const metrics = groupMetrics[group.groupName] || { passRate: 0, totalEntries: 0, passCount: 0 };
+
+    reportData.push([
+      group.groupName,
+      group.grade,
+      metrics.passRate.toFixed(1) + "%",
+      metrics.totalEntries,
+      metrics.passCount || 0
+    ]);
+
+    if (metrics.totalEntries > 0) {
+      totalSoloRate += metrics.passRate;
+      soloGroupCount++;
+    }
+  });
+
+  reportData.push([""]);
+
+  // Comparison Summary
+  const avgCoTeachingRate = coTeachingPairCount > 0 ? totalCoTeachingRate / coTeachingPairCount : 0;
+  const avgSoloRate = soloGroupCount > 0 ? totalSoloRate / soloGroupCount : 0;
+
+  reportData.push(["COMPARISON SUMMARY"]);
+  reportData.push(["Metric", "Co-Teaching Groups", "Solo Groups", "Difference"]);
+  reportData.push([
+    "Average Pass Rate",
+    avgCoTeachingRate.toFixed(1) + "%",
+    avgSoloRate.toFixed(1) + "%",
+    (avgCoTeachingRate - avgSoloRate).toFixed(1) + "%"
+  ]);
+
+  // Structural Weakness Analysis
+  reportData.push([""]);
+  reportData.push(["STRUCTURAL WEAKNESS ANALYSIS"]);
+  reportData.push(["(Co-teaching pairs with >10% difference between groups may indicate structural issues)"]);
+  reportData.push([""]);
+
+  const weaknessPairs = coTeachingPairs.filter(pair => {
+    const g1 = groupMetrics[pair.group1] || { passRate: 0 };
+    const g2 = groupMetrics[pair.group2] || { passRate: 0 };
+    return Math.abs(g1.passRate - g2.passRate) > 10;
+  });
+
+  if (weaknessPairs.length > 0) {
+    reportData.push(["⚠️ Pairs with significant performance gaps:"]);
+    weaknessPairs.forEach(pair => {
+      const g1 = groupMetrics[pair.group1] || { passRate: 0 };
+      const g2 = groupMetrics[pair.group2] || { passRate: 0 };
+      const diff = Math.abs(g1.passRate - g2.passRate);
+      const lowerGroup = g1.passRate < g2.passRate ? pair.group1 : pair.group2;
+      reportData.push([`  • ${pair.group1} vs ${pair.group2}: ${diff.toFixed(1)}% gap (${lowerGroup} is lower)`]);
+    });
+  } else {
+    reportData.push(["✓ No significant performance gaps detected between co-teaching pairs."]);
+  }
+
+  // Write to sheet
+  if (reportData.length > 0) {
+    const maxCols = Math.max(...reportData.map(row => row.length));
+    const normalizedData = reportData.map(row => {
+      while (row.length < maxCols) row.push("");
+      return row;
+    });
+
+    reportSheet.getRange(1, 1, normalizedData.length, maxCols).setValues(normalizedData);
+
+    // Format header
+    reportSheet.getRange(1, 1, 1, maxCols).setFontWeight("bold").setFontSize(14);
+    reportSheet.getRange("A4").setFontWeight("bold");
+    reportSheet.getRange("A8").setFontWeight("bold");
+
+    // Auto-resize columns
+    for (let i = 1; i <= maxCols; i++) {
+      reportSheet.autoResizeColumn(i);
+    }
+  }
+
+  // Show completion message
+  ui.alert("Co-Teaching Report Generated",
+    `Report created with:\n` +
+    `• ${coTeachingPairs.length} co-teaching pairs analyzed\n` +
+    `• ${soloGroups.length} solo groups analyzed\n` +
+    `• ${weaknessPairs.length} pairs flagged for review\n\n` +
+    `See the "Co-Teaching Report" sheet for details.`,
+    ui.ButtonSet.OK);
+
+  Logger.log("Co-Teaching Report generated successfully");
+}
+
+/**
+ * Calculates pass rate metrics for each group from Small Group Progress data
+ *
+ * @param {Array} progressData - Data from Small Group Progress sheet
+ * @returns {Object} Map of groupName -> {passRate, totalEntries, passCount}
+ */
+function calculateGroupMetrics(progressData) {
+  const metrics = {};
+
+  // Skip header row, process data
+  // Columns: Timestamp | Teacher | Group | Student | Lesson | Status | (optional: Source Group)
+  for (let i = 1; i < progressData.length; i++) {
+    const row = progressData[i];
+    const groupName = row[2] ? row[2].toString().trim() : "";
+    const status = row[5] ? row[5].toString().trim().toUpperCase() : "";
+    const sourceGroup = row[6] ? row[6].toString().trim() : "";
+
+    // Use sourceGroup if available (co-teaching), otherwise use groupName
+    const effectiveGroup = sourceGroup || groupName;
+
+    if (!effectiveGroup || !status) continue;
+    if (status === 'U') continue; // Skip unenrolled
+
+    if (!metrics[effectiveGroup]) {
+      metrics[effectiveGroup] = {
+        totalEntries: 0,
+        passCount: 0,
+        passRate: 0
+      };
+    }
+
+    metrics[effectiveGroup].totalEntries++;
+
+    if (status === 'Y') {
+      metrics[effectiveGroup].passCount++;
+    }
+  }
+
+  // Calculate pass rates
+  for (const group in metrics) {
+    const m = metrics[group];
+    m.passRate = m.totalEntries > 0 ? (m.passCount / m.totalEntries * 100) : 0;
+  }
+
+  return metrics;
+}
+
+/**
+ * Adds the Co-Teaching Report option to the menu
+ * Call this from the main menu setup function
+ */
+function addCoTeachingReportMenu() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Co-Teaching')
+    .addItem('Generate Comparison Report', 'generateCoTeachingReport')
+    .addToUi();
 }
